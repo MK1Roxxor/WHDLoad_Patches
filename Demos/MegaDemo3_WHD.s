@@ -21,6 +21,9 @@
 ** History			***
 ***********************************
 
+; 10-May-2020	- crash in part 5 (Scrolly by Kaktus) on 68000 fixed,
+;		  caused by wrong SetSpeed patch
+
 ; 08-May-2020	- Black Shadow's part (part 17) didn't run correctly on
 ;		  some machines (reported by Paul Mitchell), changed the
 ;		  way it waits for the raster beam which fixed the problem
@@ -143,7 +146,7 @@
 FLAGS		= WHDLF_NoError|WHDLF_EmulTrap|WHDLF_ClearMem
 DEBUGKEY	= $58		; F9
 QUITKEY		= $59		; F10
-;DEBUG
+DEBUG
 
 ; absolute skip
 PL_SA	MACRO
@@ -194,7 +197,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 .name	dc.b	"Megademo 3",0
 .copy	dc.b	"1989 North Star & Fairlight",0
 .info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
-	dc.b	"Version 1.01 (08.05.2020)",0
+	dc.b	"Version 1.02 (10.05.2020)",0
 	CNOP	0,2
 
 TAGLIST		dc.l	WHDLTAG_CUSTOM1_GET
@@ -1001,6 +1004,7 @@ PL_PART5
 	PL_L	$76a+4,$dff064		; $dff6064 -> $dff064
 	PL_END
 
+
 .setDMA	move.w	#$81c1+1<<9,$dff096
 	move.w	#0,$dff102
 	move.w	#0,$dff104
@@ -1687,7 +1691,7 @@ FixAudXVol
 	rts
 
 SetSpeed
-	move.l	d0,-(a7)
+	move.l	a0,-(a7)
 	lea	Speed(pc),a0
 	move.w	d0,(a0)
 	move.l	(a7)+,a0
