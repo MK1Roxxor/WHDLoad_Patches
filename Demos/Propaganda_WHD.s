@@ -21,6 +21,10 @@
 *** History			***
 ***********************************
 
+; 19-May-2020	- some size optimising
+
+; 18-May-2020	- buggy register restoring fixed
+
 ; 27-Apr-2020	- interrupt problem in main part fixed
 
 ; 26-Apr-2020	- work started
@@ -83,7 +87,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.00 (27.04.2020)",0
+	dc.b	"Version 1.01 (19.05.2020)",0
 
 FileName
 	dc.b	"Propaganda_00",0
@@ -201,8 +205,7 @@ AckLev6_R
 	move.w	#1<<13,$dff09c
 	rts	
 
-AckLev6	move.w	#1<<13,$dff09c
-	move.w	#1<<13,$dff09c
+AckLev6	bsr.b	AckLev6_R
 	rte
 
 
@@ -264,6 +267,11 @@ PLMAIN	PL_START
 	PL_PS	$12bf6,.WaitBlit
 
 	PL_ORW	$12118+2,1<<3		; enable level 2 interrupts
+
+
+	PL_W	$10ca6,$4cdf
+	PL_W	$11612,$4cdf
+	PL_W	$122a6,$4cdf		; movem.l (a7),xx -> movem.l (a7)+,x
 	PL_END
 
 .WaitBlit
