@@ -21,6 +21,9 @@
 *** History			***
 ***********************************
 
+; 22-May-2020	- blitter wait added in DoIO patch to avoid crash on
+;		  slow machines
+
 ; 17-May-2020	- work started
 ;		- and finished a few hours later, lots of bugs in the code!
 ;		- DMA wait in replayer fixed (x2), byte write to volume
@@ -34,7 +37,7 @@
 
 FLAGS		= WHDLF_NoError|WHDLF_ClearMem|WHDLF_EmulTrap
 QUITKEY		= $59		; F10
-DEBUG
+;DEBUG
 
 ; absolute skip
 PL_SA	MACRO
@@ -88,7 +91,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.00 (17.05.2020)",0
+	dc.b	"Version 1.01 (22.05.2020)",0
 
 	CNOP	0,4
 
@@ -170,18 +173,26 @@ AckVBI	move.w	#1<<4|1<<5|1<<6,$dff09c
 
 
 
-DoIO	movem.l	d0-a6,-(a7)
+DoIO	move.w	#$4000,$dff09a
+
+	movem.l	d0-a6,-(a7)
 	cmp.w	#2,$1c(a1)	; only CMD_READ is supported
 	bne.b	.exit
 
+	bsr.b	WaitBlit
+
 	move.l	$2c(a1),d0
 	movem.l	$24(a1),d1/a0
+
 	moveq	#1,d2
 	move.l	resload(pc),a2
 	jsr	resload_DiskLoad(a2)
 
 
 .exit	movem.l	(a7)+,d0-a6
+
+
+	move.w	#$c000,$dff09a
 	rts
 
 
