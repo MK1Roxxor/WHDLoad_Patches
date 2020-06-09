@@ -21,6 +21,9 @@
 *** History			***
 ***********************************
 
+; 09-Jun-2020	- another version of the demo supported
+; (V1.01)
+
 ; 09-Jun-2020	- demo didn't restart correctly after leaving credits
 ;		  part, main part patch slightly changed
 ;		- unused code removed
@@ -42,7 +45,7 @@
 
 FLAGS		= WHDLF_NoError|WHDLF_ClearMem
 QUITKEY		= $59		; F10
-DEBUG
+;DEBUG
 
 ; absolute skip
 PL_SA	MACRO
@@ -96,7 +99,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.00 (09.06.2020)",0
+	dc.b	"Version 1.01 (09.06.2020)",0
 	CNOP	0,4
 
 
@@ -191,8 +194,16 @@ PLBOOTBLOCK
 	; install level 2 interrupt
 	bsr	SetLev2IRQ
 
+	lea	$200.w,a0
+	move.l	#4*512,d0
+	move.l	resload(pc),a2
+	jsr	resload_CRC16(a2)
+	lea	PLBOOT_V2(pc),a0
+	cmp.w	#$68C2,d0
+	beq.b	.isV2
+
 	lea	PLBOOT(pc),a0
-	pea	$200.w
+.isV2	pea	$200.w
 	bra.b	PatchAndRun
 	
 
@@ -206,11 +217,18 @@ PLBOOT	PL_START
 	PL_R	$724			; disable track 0 step
 	PL_P	$3f0,Load
 	PL_R	$792			; disable drive access (motor off)
-	PL_PS	$fa,.PatchIntroAndMain
-	PL_PS	$278,.PatchCredits
+	PL_PS	$fa,PatchIntroAndMain
+	PL_PS	$278,PatchCredits
+	PL_PS	$4c,.PatchBase
 	PL_END
 
-.PatchIntroAndMain
+.PatchBase
+	lea	PLBASE(pc),a0
+PatchBase
+	pea	$7b400
+	bra.b	PatchAndRun
+
+PatchIntroAndMain
 	lea	PLMAIN(pc),a0
 	lea	$1000.w,a1
 	move.l	resload(pc),a2
@@ -221,7 +239,7 @@ PLBOOT	PL_START
 	bra.b	PatchAndRun
 
 
-.PatchCredits
+PatchCredits
 	lea	PLCREDITS(pc),a0
 	pea	$2e5c6
 PatchAndRun
@@ -229,6 +247,23 @@ PatchAndRun
 	move.l	resload(pc),a2
 	jmp	resload_Patch(a2)
 
+
+PLBOOT_V2
+	PL_START
+	PL_SA	$1c,$26			; skip write to FMODE+BLCON3
+	PL_R	$2e4			; disable drive ready check
+	PL_R	$730			; disable track 0 step
+	PL_P	$3fc,Load
+	PL_R	$79e			; disable drive access (motor off)
+	PL_PS	$106,PatchIntroAndMain
+	PL_PS	$284,PatchCredits
+	PL_PS	$58,.PatchBase
+	PL_END
+	
+
+.PatchBase
+	lea	PLBASE_V2(pc),a0
+	bra.b	PatchBase
 
 
 Load	movem.l	d1-a6,-(a7)
@@ -261,8 +296,7 @@ Load	movem.l	d1-a6,-(a7)
 	moveq	#0,d0			; no errors
 	rts
 
-.TAB	dc.w	6,PLBASE-.TAB
-	dc.w	$68,PLREPLAY-.TAB
+.TAB	dc.w	$68,PLREPLAY-.TAB
 	dc.w	-1
 	
 
@@ -270,6 +304,13 @@ PLBASE	PL_START
 	PL_PS	$72,AckLev1
 	PL_W	$112,$1fe		; FMODE -> NOP
 	PL_END
+
+PLBASE_V2
+	PL_START
+	PL_PS	$72,AckLev1
+	PL_W	$12c,$1fe		; FMODE -> NOP
+	PL_END
+	
 
 AckLev1	move.w	#1<<2,$9c(a6)
 	move.w	#1<<2,$9c(a6)
@@ -300,7 +341,6 @@ PLMAIN	PL_START
 	PL_W	$d0c,$1fe		; FMODE -> NOP
 	PL_END
 	
-
 ; ---------------------------------------------------------------------------
 
 PLCREDITS
@@ -310,7 +350,6 @@ PLCREDITS
 	PL_PS	$95e,AckLev6_R
 	PL_END
 	
-
 
 ***********************************
 *** Level 2 IRQ			***
@@ -339,23 +378,9 @@ SetLev2IRQ
 	btst	#3,$d00(a1)			; KBD irq?
 	beq.b	.end
 
-	lea	Key(pc),a2
 	move.b	$c00(a1),d0
-	move.b	d0,(a2)
-
 	not.b	d0
 	ror.b	d0
-	move.b	d0,RawKey-Key(a2)
-
-
-	move.l	KbdCust(pc),d1
-	beq.b	.noCust
-	movem.l	d0-a6,-(a7)
-	move.l	d1,a0
-	jsr	(a0)
-	movem.l	(a7)+,d0-a6
-.noCust
-
 
 	or.b	#1<<6,$e00(a1)			; set output mode
 
@@ -374,11 +399,5 @@ SetLev2IRQ
 	move.w	#1<<3,$9c(a0)		; twice to avoid a4k hw bug
 	movem.l	(a7)+,d0-d1/a0-a2
 	rte
-
-
-
-Key	dc.b	0
-RawKey	dc.b	0
-KbdCust	dc.l	0
 
 
