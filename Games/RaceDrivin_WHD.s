@@ -102,6 +102,9 @@ PatchGame
 	move.l	resload(pc),a2
 	jsr	resload_SetCPU(a2)
 
+	; V2.01: Initialise keyboard and some other stuff
+	jsr	$189e(a5)
+
 	jmp	$62(a5)			; $62: skip relocation
 
 
@@ -434,7 +437,7 @@ CUSTOM1		DC.L	0
 slv_name	DC.B	"Race Drivin'",0
 slv_copy	DC.B	'1991 Tengen / Domark / Atari',0
 slv_info	dc.b	"installed by Girv & StingRay/[S]carab^Scoopex",10
-		dc.b	"Version 2.00 (16.05.2021)",0
+		dc.b	"Version 2.01 (17.05.2021)",0
 
 HighscoreName	dc.b	'RaceDrivin.high',0
 DiskNum		dc.b	2
