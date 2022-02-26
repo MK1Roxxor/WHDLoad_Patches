@@ -21,6 +21,11 @@
 *** History			***
 ***********************************
 
+; 26-Feb-2022	- version check changed, see routine
+;	 	  "determine_game_version" for information
+;		- delay in keyboard interrupt fixed
+;		- debug key removed from keyboard interrupt
+
 ; 24-Feb-2022	- support for v1.0 of the game added (issue #5505)
 
 ; 02-Jan-2016	- source can be assembled case-sensitive now
@@ -94,7 +99,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 .name	dc.b	"Manchester United Premier League Champions",0
 .copy	dc.b	"1994 Krisalis",0
 .info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
-	dc.b	"Version 1.02 (24.02.2022)",0
+	dc.b	"Version 1.03 (26.02.2022)",0
 	CNOP	0,2
 
 TAGLIST		dc.l	WHDLTAG_ATTNFLAGS_GET
@@ -218,23 +223,7 @@ PLFIRST_1790
 	move.l	d0,a5
 	move.l	resload(pc),a2
 
-	move.l	a5,a0
-	move.l	#$4000,d0
-	jsr	resload_CRC16(a2)
-	lea	PLGAME_V10(pc),a0
-	cmp.w	#$b9d9,d0
-	beq.b	.is_supported_version
-
-	lea	PLGAME_1790(pc),a0
-	cmp.w	#$9df9,d0
-	beq.b	.is_supported_version
-
-	pea	(TDREASON_WRONGVER).w
-	bra.w	EXIT
-
-.is_supported_version
-
-
+	bsr.b	Determine_Game_Version
 
 	move.l	BOOTDATA(pc),d0
 	beq.b	.isgame
@@ -257,6 +246,55 @@ PLFIRST_1790
 	movem.l	(a7)+,d0-a6
 	rts
 
+
+; ---------------------------------------------------------------------------
+; Determine game version, this is done by performing a CRC16 over the
+; ByteKiller decruncher code. The decruncher code is 100% pc-relative so
+; it will always return the same checksum value. This is important as the
+; version check is done after the game code has been relocated.
+;
+; To add support for a different version, locate the ByteKiller decruncher
+; in the game code and add the start and end offset as well as the
+; offset to the patchlist to the table.
+
+
+; a0.l: relocated game code
+; a2.l: resload
+; a5.l: relocated game code
+; ----
+; a0.l: patchlist
+
+Determine_Game_Version
+	lea	.TAB(pc),a3
+.loop	movem.w	(a3)+,d2/d3/d4	
+	moveq	#0,d0
+	move.w	d3,d0
+	sub.w	d2,d0
+	move.l	a5,a0
+	add.w	d2,a0
+	jsr	resload_CRC16(a2)
+	cmp.w	#$ABCE,d0
+	beq.b	.supported_version_found
+
+	tst.w	(a3)
+	bne.b	.loop
+
+	; unsupported version, display error message and quit
+	pea	(TDREASON_WRONGVER).w
+	bra.w	EXIT
+
+
+	; supported version, return patchlist to use
+.supported_version_found
+	lea	.TAB(pc,d4.w),a0
+	rts
+
+.TAB	dc.w	$33e4,$349e,PLGAME_1790-.TAB	; V1.2, SPS 1790
+	dc.w	$33da,$3494,PLGAME_V10-.TAB	; V1.0
+	dc.w	0				; end of table
+
+
+; ---------------------------------------------------------------------------
 
 PLDATA_1789
 	PL_START
@@ -471,26 +509,15 @@ SetLev2IRQ
 
 
 	btst	#3,$1e+1(a0)			; PORTS irq?
-	beq.w	.end
+	beq.b	.end
 	btst	#3,$d00(a1)			; KBD irq?
-	beq.w	.end
+	beq.b	.end
 
 	move.b	$c00(a1),d0
 	not.b	d0
 	ror.b	d0
 
 	or.b	#1<<6,$e00(a1)			; set output mode
-
-
-
-	cmp.b	HEADER+ws_keydebug(pc),d0	
-	bne.b	.nodebug
-	movem.l	(a7)+,d0-d1/a0-a2
-	move.w	(a7),6(a7)			; sr
-	move.l	2(a7),(a7)			; pc
-	clr.w	4(a7)				; ext.l sr
-	bra.b	.debug
-
 
 .nodebug
 	cmp.b	HEADER+ws_keyexit(pc),d0
@@ -501,7 +528,7 @@ SetLev2IRQ
 	moveq	#3-1,d1
 .loop	move.b	$6(a0),d0
 .wait	cmp.b	$6(a0),d0
-	bne.b	.wait
+	beq.b	.wait
 	dbf	d1,.loop
 
 
@@ -515,6 +542,7 @@ SetLev2IRQ
 .quit	move.l	resload(pc),-(a7)
 	addq.l	#resload_Abort,(a7)
 	rts
+
 .exit	pea	(TDREASON_OK).w
 	bra.b	.quit
 
