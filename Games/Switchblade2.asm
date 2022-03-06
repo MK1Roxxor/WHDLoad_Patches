@@ -35,7 +35,7 @@
 
 FLAGS		= WHDLF_NoError|WHDLF_ClearMem|WHDLF_EmulTrap
 QUITKEY		= $59		; F10
-DEBUG
+;DEBUG
 
 ; absolute skip
 PL_SA	MACRO
@@ -83,10 +83,23 @@ base
 	dc.b	"C1:X:Invincibility:4;"
 	dc.b	"C1:X:Start with Max. Money:5;"
 	dc.b	"C1:X:In-Game Keys (Press HELP during game):6;"
-	dc.b	"C2:L:Start at Level:1,2,3,4,5,6,7"
+	dc.b	"C2:B:Second button jumps;"
+	dc.b	"C3:L:Start at Level:1,2,3,4,5,6,7;"
+    dc.b    "C4:B:disable blitter waits (slow machines)"
 	dc.b	0
 
-
+DECL_VERSION:MACRO
+	dc.b	"1.6"
+	IFD BARFLY
+		dc.b	" "
+		INCBIN	"T:date"
+	ENDC
+	IFD	DATETIME
+		dc.b	" "
+		incbin	datetime
+	ENDC
+	ENDM
+	
 .dir	IFD	DEBUG
 	dc.b	"SOURCES:WHD_Slaves/Switchblade2/"
 	ENDC
@@ -95,24 +108,31 @@ base
 .name	dc.b	'--< S W i T C H B L A D E  I I >--',0
 .copy	dc.b	'1991 Gremlin Graphics',0
 .info	dc.b	'Installed and fixed by',10
-	dc.b	'Galahad of Fairlight and Harry',10
-	dc.b	10
-	dc.b	"V1.3 by StingRay/[S]carab^Scoopex",10
+	dc.b	'Galahad of Fairlight, Harry,',10
+	dc.b	"StingRay/[S]carab^Scoopex and JOTD",10
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	'Version 1.3 (01.11.2018)',0
-	CNOP 0,2
+	dc.b	'Version '
+	DECL_VERSION	
+	dc.b	0
+
 Introfile:
 	dc.b	'INTRO.BIN',0
 Bootfile:
 	dc.b	'BOOT.BIN',0
 Hiscore:
 	dc.b	"Switchblade2.high",0
+	
+	dc.b	"$VER: slave "
+	DECL_VERSION
+	dc.b	10,0
+	EVEN
 
-	even
-
-TAGLIST	dc.l	WHDLTAG_CUSTOM2_GET
+IGNORE_RAW_JOYDAT
+	include	ReadJoyPad.s
+	
+TAGLIST	dc.l	WHDLTAG_CUSTOM3_GET
 LEVEL	dc.l	0
 	dc.l	TAG_DONE
 
@@ -129,6 +149,10 @@ Start	;	A0 = resident loader
 	lea	TAGLIST(pc),a0
 	jsr	resload_Control(a2)
 
+	bsr	_detect_controller_types
+	lea third_button_maps_to(pc),a0
+    move.l  #JPF_BTN_YEL,(a0)
+    
 ; stingray, V1.3
 
 ; load boot
@@ -201,7 +225,6 @@ PLBOOT	PL_START
 
 	
 .PatchGame
-
 ; set starting level
 	move.l	LEVEL(pc),d0
 	beq.b	.normal
@@ -280,7 +303,7 @@ PLGAME	PL_START
 	PL_P	$19de8,AckVBI
 	PL_PS	$18e52,.CheckQuit
 
-
+    PL_IFC4
 	PL_PS	$1afa6,.wblit1
 	PL_PS	$1b012,.wblit2
 	PL_PS	$1bf80,.wblit3
@@ -291,7 +314,7 @@ PLGAME	PL_START
 	PL_PS	$190aa,.wblit4
 	PL_PSS	$19364,.wblit6,2
 	PL_PS	$19396,.wblit4
-	
+    PL_ENDIF
 
 ; unlimited lives
 	PL_IFC1X	0
@@ -302,7 +325,7 @@ PLGAME	PL_START
 	PL_IFC1X	1
 	PL_W	$16e50+2,0
 	PL_B	$1707c,$4a
-	PL_B	$1b382,$4a
+	PL_B	$1b382,$4a	; fall
 	PL_ENDIF
 
 ; unlimited ammo
@@ -330,11 +353,13 @@ PLGAME	PL_START
 	PL_B	$108ce,$4a
 	PL_ENDIF
 
+
+    
 ; invincibility
 	PL_IFC1X	4
 	PL_B	$16e34,$60
-	PL_L	$17054,$4e714e71
-	
+	PL_NOP	$17054,4
+	PL_B	$1b76e-$400,$60	; can fall from any height
 	PL_ENDIF
 
 
@@ -351,6 +376,20 @@ PLGAME	PL_START
 	PL_PS	$f7c4,.EnableKeys	; and enable them again after name has been entered
 	PL_ENDIF
 
+	PL_IFC2
+    PL_PS    $19838-$400,.read_joy0dat
+    PL_PS    $19864-$400,.read_joy0dat
+    PL_PS    $19890-$400,.read_joy0dat
+    PL_PS    $198ba-$400,.read_joy0dat
+    PL_PS    $198d8-$400,.read_joy0dat
+    PL_PS    $198f6-$400,.read_joy0dat
+	PL_PS	$19f4a-$400,.start_climbing_ladder
+	PL_PS	$19f8c-$400,.do_jump
+	
+    ; read joypad from vbl
+	PL_PS	$1A184-$400,.vbl_hook
+	PL_S	$1A18A-$400,$D4-$8A
+	PL_ENDIF
 
 	PL_SA	$19dfc,$19eae		; disable CHROME cheat
 
@@ -410,7 +449,40 @@ PLGAME	PL_START
 .exit	movem.l	(a7)+,d0-a6
 	rts
 
-
+.start_climbing_ladder
+	move.l	joy1(pc),d0
+	btst	#JPB_BTN_UP,d0
+	bne.b	.climb		; if it wasn't "up", then jump
+	add.l	#$3C,(a7)	; jump
+	rts
+	
+	; alternate behaviour: just do nothing
+	;addq.l	#4,a7
+	;rts
+.climb
+	MOVE.W	$26b4.w,d0 	; player_x_absolute_coord,D0	
+	rts
+	
+.do_jump
+	move.l	D0,-(a7)
+	move.l	joy1(pc),d0
+	btst	#JPB_BTN_BLU,d0
+	bne.b	.jump		; if it wasn't "up", then do nothing
+	btst	#JPB_BTN_YEL,d0
+	beq.b	.nojump		; if it wasn't "up", then do nothing
+	move.b	#7,$4500.W	; crouch? triggers high jump
+	clr.b	$4504.w	; unknown flag that triggers low jump (when???)
+	bra.b	.jump		; if it wasn't "up", then do nothing
+.nojump
+	addq.l	#4,a7
+	move.l	(a7)+,d0
+	rts
+.jump
+	ST	.LADDER_FLAG.W
+	move.l	(a7)+,d0
+	rts
+	
+	
 .TAB	dc.w	$36,.SkipLevel-.TAB	; N - skip level
 	dc.w	$5f,.ShowHelp-.TAB	; HELP - show help screen
 	dc.w	$12,.RefreshEnergy-.TAB	; E - refresh energy
@@ -687,11 +759,95 @@ PLGAME	PL_START
 	movem.l	(a7)+,d0-a6
 .nosave	rts
 
+.rawkey = $19216
+
+TEST_BUTTON:MACRO
+    btst    #JPB_BTN_\1,d1
+    beq.b   .nochange_\1
+    move.b  #\2,d3
+    btst    #JPB_BTN_\1,d0
+    bne.b   .pressed_\1
+    bset    #7,d3   ; released
+.pressed_\1
+    move.b  d3,(a1) ; store keycode
+.nochange_\1
+    ENDM
+	
+.vbl_hook
+	move.l	#$1966,d0
+	lea	$dff120,a0
+	; original game (less cycles :))
+	MOVE.L	d0,(a0)+
+	MOVE.L	d0,(a0)+
+	MOVE.L	d0,(a0)+
+	MOVE.L	d0,(a0)+
+	MOVE.L	d0,(a0)+
+	MOVE.L	d0,(a0)+
+	MOVE.L	d0,(a0)+
+	MOVE.L	d0,(a0)
+    lea read_once_out_of_2(pc),a0
+    eor.b   #1,(a0)
+    beq.b   .nochange
+    
+    lea joy1(pc),a0
+    lea	.rawkey,a1
+    move.l  (a0),d1     ; get previous state
+    moveq.l #1,d0
+	bsr	_read_joystick
+    cmp.l   d0,d1
+    beq.b   .nochange   ; cheap-o test just in case no input has changed
+    move.l  d0,(a0)     ; save previous state for next time
+
+    ; now D0 is current joypad state
+    ;     D1 is previous joypad state
+    ; xor to d1 to get what has changed quickly
+    eor.l   d0,d1
+    ; d1 bears changed bits (buttons pressed/released)
+    TEST_BUTTON PLAY,$19     ; pause
+	btst	#JPB_BTN_FORWARD,d0
+	beq.b	.nochange
+	btst	#JPB_BTN_REVERSE,d0
+	beq.b	.nochange
+	btst	#JPB_BTN_YEL,d0
+	bne		QUIT
+.nochange 	
+	rts
+
+.LADDER_FLAG = $444A	; when climbing ladder
+	
+.read_joy0dat:
+	move.l	(4,a7),d0	; caller of the read controls routine
+	cmp.l	#$10700,d0
+	beq.b	.from_shop	; shop: no buttons
+	
+	movem.l	d1/a0,-(a7)
+	move.l	joy1(pc),d1
+	move.l	$DFF00A,D0
+	; here just make BLU exactly like UP
+	; we'll sort out the difference later in the game
+	tst.b	$44C2.W		; on ladder? ignore button
+	;tst.b	.LADDER_FLAG.W		; on ladder? ignore button
+	bne.b	.no_blue
+	btst	#JPB_BTN_YEL,d1		; high jump
+	bne.b	.blue
+	btst	#JPB_BTN_BLU,d1
+	beq.b	.no_blue
+.blue:
+	; set UP because blue pressed
+	bclr	#8,d0
+	btst	#9,d0
+	bne.b	.no_blue
+	bset	#8,d0	; xor 8 and 9 yields 1 cos bit9=1
+.no_blue:
+	movem.l	(a7)+,d1/a0
+	RTS	
 
 
-
-
-
+.from_shop
+	move.l	$DFF00A,D0
+	rts
+	
+	
 QUIT	pea	(TDREASON_OK).w
 EXIT	move.l	resload(pc),-(a7)
 	addq.l	#resload_Abort,(a7)
@@ -815,3 +971,8 @@ WaitRaster
 .wait2	btst	#0,$dff005
 	bne.b	.wait2
 	rts
+
+prev_buttons_state
+		dc.l	0
+read_once_out_of_2
+    dc.b    0
