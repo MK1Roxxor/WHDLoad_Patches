@@ -21,6 +21,12 @@
 *** History			***
 ***********************************
 
+; 06-Mar-2022	- trainer options adapted for V1.2
+;		- Bplcon0 color bit fixes (end part)
+
+; 05-Mar-2022	- started to add support for V1.2 of the game
+;		- debug key removed from keyboard interrupt
+
 ; 02-Aug-2016	- writes to Beamcon0, Fmode, Bplcon3/4 disabled
 ;		- color bit fix
 ;		- added option to jump with fire (CUSTOM3), requested
@@ -95,7 +101,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.01 (02.08.2016)",0
+	dc.b	"Version 1.02 (06.03.2022)",0
 HiName	dc.b	"SolidGold.high",0
 	CNOP	0,2
 
@@ -138,9 +144,12 @@ Patch	lea	resload(pc),a1
 	move.l	a5,a0
 	move.l	d5,d0
 	jsr	resload_CRC16(a2)
-	cmp.w	#$fdd4,d0
+	cmp.w	#$8c82,d0		; V1.2
+	beq.b	.is_supported_version
+	cmp.w	#$fdd4,d0		; V1.0
 	bne.b	.wrongver
 
+.is_supported_version
 	move.l	a5,a0
 	lea	$72400,a1
 	bsr	BK_DECRUNCH
@@ -162,10 +171,9 @@ Patch	lea	resload(pc),a1
 	jsr	$72400+$1d0		; display tite picture
 
 
-
 ; load game
 	move.l	#$2800,d0
-	move.l	#$7e1c+12,d1
+	move.l	#$7e4c+12,d1
 	lea	$1000.w,a0
 	move.l	a0,a5
 	move.l	d0,d5
@@ -175,19 +183,24 @@ Patch	lea	resload(pc),a1
 	move.l	a5,a0
 	move.l	d5,d0
 	jsr	resload_CRC16(a2)
-	cmp.w	#$d5a6,d0
+	moveq	#0,d1			; game version
+	cmp.w	#$d5a6,d0		; V1.0
 	beq.b	.ok
+	moveq	#1,d1
+	cmp.w	#$09c4,d0		; V1.2
+	beq.b	.ok
+
 .wrongver
 	pea	(TDREASON_WRONGVER).w
 	bra.w	EXIT
 
-.ok
+.ok	lea	Game_Version(pc),a0
+	move.w	d1,(a0)
 
 ; decrunch
 	move.l	a5,a0
 	move.l	HEADER+ws_ExpMem(pc),a1
 	bsr	BK_DECRUNCH
-
 
 ; relocate
 	move.l	HEADER+ws_ExpMem(pc),a1	; reloc entries
@@ -238,6 +251,8 @@ KillSys	move.w	#$7fff,$dff09a
 	move.w	#$7fff,$dff09c
 	rts
 
+Game_Version	dc.w	0		; 0: V1.0, 1: V1.2
+
 PLTITLE	PL_START
 	PL_SA	$238,$23c		; skip _LVOWaitBlit
 	PL_R	$24e
@@ -246,7 +261,7 @@ PLTITLE	PL_START
 	PL_ORW	$252,1<<9		; set Bplcon0 color bit
 	PL_SA	$1ec,$1f8		; skip reg init+FMODE write
 	PL_END
-	
+
 
 
 PLGAME	PL_START
@@ -264,17 +279,35 @@ PLGAME	PL_START
 	PL_PS	$2f9a,.checkfire
 	PL_ENDIF
 
+	PL_PS	$d8c,.FixCop
 	PL_END
+
+
+
+.FixCop	move.l	a0,-(a7)
+	move.l	4(a1),a0
+	bsr.w	Fix_Copperlist
+	move.l	(a7)+,a0
+	move.l	4(a1),$80(a6)
+	rts
 
 
 .checkfire
 	moveq	#0,d0
 	movem.l	d0/d1,-(a7)		; movem is required here!
 	
+	move.w	Game_Version(pc),d1
+	beq.b	.is_game_version1
+	move.b	-$2545(a4),d0		; up/down
+	or.b	-$2546(a4),d0		; +fire
+	bra.b	.exit
+	
+
+.is_game_version1
 	move.b	-$2555(a4),d0		; up/down
 	or.b	-$2556(a4),d0		; +fire
 
-	movem.l	(a7)+,d0/d1
+.exit	movem.l	(a7)+,d0/d1
 	rts
 
 .bw	move.l	BUTTONWAIT(pc),d0
@@ -337,19 +370,46 @@ PLGAME	PL_START
 	beq.b	.nokeys
 	cmp.b	#$36,d1			; N-skip level
 	bne.b	.nolevskip
+
+	move.w	Game_Version(pc),d2
+	beq.b	.Level_Skip_V1
+	sf	-$22c3(a4)
+	st	-$1c74(a4)
+	bra.b	.Level_Skip_Done
+
+.Level_Skip_V1
 	sf	-$22d3(a4)
 	st	-$1c84(a4)
+.Level_Skip_Done
+
+
 .nolevskip
 	cmp.b	#$28,d1			; L-add 1 life
 	bne.b	.nolife
+	move.w	Game_Version(pc),d3
+	beq.b	.Add_Life_V1
+	moveq	#1,d3
+	move.b	-$22c5(a4),d2
+	cmp.b	#$99,d2
+	beq.b	.nolife_V2
+	abcd	d3,d2
+	move.b	d2,-$22c5(a4)
+.nolife_V2
+	bra.b	.Add_Life_Done
+
+
+.Add_Life_V1
 	moveq	#1,d3
 	move.b	-$22d5(a4),d2
 	cmp.b	#$99,d2
 	beq.b	.nolife
 	abcd	d3,d2
 	move.b	d2,-$22d5(a4)
+.Add_Life_Done
 
 .nolife
+
+
 
 .nokeys	movem.l	(a7)+,d2/d3
 
@@ -365,6 +425,31 @@ PLGAME	PL_START
 	moveq	#0,d0			; no errors
 	movem.l	(a7)+,d1-a6
 	rts
+
+
+; This routine fixes several copperlist problems:
+; - the BPLCON0 color bit will be set
+; - all illegal BPLCON0 bits will be cleared
+
+; a0.l: copperlist
+
+Fix_Copperlist
+.loop	cmp.w	#$0100,(a0)
+	bne.b	.is_not_Bplcon0
+
+	; clear illegal BPLCON0 bits
+	;and.w	#~(1<<0|1<<4|1<<5|1<<6|1<<7),2(a0)
+
+	; set color bit
+	or.w	#1<<9,2(a0)
+
+.is_not_Bplcon0
+
+	addq.w	#4,a0
+	cmp.l	#$fffffffe,(a0)
+	bne.b	.loop
+	rts
+
 
 
 WaitRaster
@@ -427,16 +512,6 @@ SetLev2IRQ
 	or.b	#1<<6,$e00(a1)			; set output mode
 
 
-
-	cmp.b	HEADER+ws_keydebug(pc),d0	
-	bne.b	.nodebug
-	movem.l	(a7)+,d0-d1/a0-a2
-	move.w	(a7),6(a7)			; sr
-	move.l	2(a7),(a7)			; pc
-	clr.w	4(a7)				; ext.l sr
-	bra.b	.debug
-
-
 .nodebug
 	cmp.b	HEADER+ws_keyexit(pc),d0
 	beq.b	.exit
@@ -455,7 +530,6 @@ SetLev2IRQ
 	movem.l	(a7)+,d0-d1/a0-a2
 	rte
 
-.debug	pea	(TDREASON_DEBUG).w
 .quit	bsr	KillSys
 	move.l	resload(pc),-(a7)
 	addq.l	#resload_Abort,(a7)
