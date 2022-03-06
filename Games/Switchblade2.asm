@@ -21,6 +21,10 @@
 ;  :                       entering name in high score screen, all old
 ;  :                       1.0-1.2 code removed, "Chrome" cheat disabled,
 ;  :                       help screen implemented (needs 4k extra memory)
+;  ;		06.03.22 - made source compatible with ASM-Pro again
+;  ;			 - "Disable Blitter Waits" checkbox handling fixed
+;  ;			 - access fault at end of level 5 fixed (issue #5513)
+;  ;			 - text for blitter wait disable checkbox adapted
 ;  :Requires.	-
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -47,6 +51,33 @@ PL_PSA	MACRO
 	PL_PS	\1,\2		; could use PSS here but it fills memory
 	PL_S	\1+6,\3-(\1+6)	; with NOPS so we use standard skip
 	ENDM
+
+DECL_VERSION:MACRO
+	dc.b	"1.7"
+	IFD BARFLY
+		dc.b	" "
+		INCBIN	"T:date"
+	ENDC
+	IFD	DATETIME
+		dc.b	" "
+		incbin	datetime
+	ENDC
+
+	dc.b	" (06.03.2022)"
+	ENDM
+
+
+TEST_BUTTON:MACRO
+    btst    #JPB_BTN_\1,d1
+    beq.b   .nochange_\1
+    move.b  #\2,d3
+    btst    #JPB_BTN_\1,d0
+    bne.b   .pressed_\1
+    bset    #7,d3   ; released
+.pressed_\1
+    move.b  d3,(a1) ; store keycode
+.nochange_\1
+    ENDM
 
 ;======================================================================
 
@@ -85,20 +116,9 @@ base
 	dc.b	"C1:X:In-Game Keys (Press HELP during game):6;"
 	dc.b	"C2:B:Second button jumps;"
 	dc.b	"C3:L:Start at Level:1,2,3,4,5,6,7;"
-    dc.b    "C4:B:disable blitter waits (slow machines)"
+    dc.b    "C4:B:Disable Blitter Waits (Slow Machines)"
 	dc.b	0
 
-DECL_VERSION:MACRO
-	dc.b	"1.6"
-	IFD BARFLY
-		dc.b	" "
-		INCBIN	"T:date"
-	ENDC
-	IFD	DATETIME
-		dc.b	" "
-		incbin	datetime
-	ENDC
-	ENDM
 	
 .dir	IFD	DEBUG
 	dc.b	"SOURCES:WHD_Slaves/Switchblade2/"
@@ -130,7 +150,7 @@ Hiscore:
 	EVEN
 
 IGNORE_RAW_JOYDAT
-	include	ReadJoyPad.s
+	include	Sources2022:WHD_Slaves/Games/Switchblade2/ReadJoyPad.s
 	
 TAGLIST	dc.l	WHDLTAG_CUSTOM3_GET
 LEVEL	dc.l	0
@@ -304,6 +324,9 @@ PLGAME	PL_START
 	PL_PS	$18e52,.CheckQuit
 
     PL_IFC4
+	; V1.7: the "Disable Blitter Waits" checkbox handling (added
+	; in V1.5) was wrong!
+	PL_ELSE
 	PL_PS	$1afa6,.wblit1
 	PL_PS	$1b012,.wblit2
 	PL_PS	$1bf80,.wblit3
@@ -393,7 +416,27 @@ PLGAME	PL_START
 
 	PL_SA	$19dfc,$19eae		; disable CHROME cheat
 
+
+	; V1.7, fix access fault at end of level 5
+	PL_PSS	$fd5e,.Fix_Access_Fault,2
 	PL_END
+
+
+.Fix_Access_Fault
+.copy_picture
+	cmp.l	#$80000-4,a1
+	bcc.b	.no_copy
+	move.l	(a0),(a1)+
+.no_copy
+	cmp.l	#$80000-4,a2
+	bcc.b	.no_copy2
+	move.l	(a0),(a2)+
+.no_copy2
+
+	addq.w	#4,a0
+	dbf	d0,.copy_picture
+	rts
+
 
 
 .EnableKeys
@@ -478,7 +521,7 @@ PLGAME	PL_START
 	move.l	(a7)+,d0
 	rts
 .jump
-	ST	.LADDER_FLAG.W
+	ST	(.LADDER_FLAG).W
 	move.l	(a7)+,d0
 	rts
 	
@@ -761,17 +804,6 @@ PLGAME	PL_START
 
 .rawkey = $19216
 
-TEST_BUTTON:MACRO
-    btst    #JPB_BTN_\1,d1
-    beq.b   .nochange_\1
-    move.b  #\2,d3
-    btst    #JPB_BTN_\1,d0
-    bne.b   .pressed_\1
-    bset    #7,d3   ; released
-.pressed_\1
-    move.b  d3,(a1) ; store keycode
-.nochange_\1
-    ENDM
 	
 .vbl_hook
 	move.l	#$1966,d0
