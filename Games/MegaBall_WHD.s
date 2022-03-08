@@ -21,6 +21,14 @@
 *** History			***
 ***********************************
 
+; 08-Mar-2022	- parsing the tooltypes fully works now
+
+; 07-Mar-2022	- code for parsing tooltypes without icon.library written
+;		  and game code patched to use it, doesn't fully work yet
+
+; 06-Mar-2022	- GetDiskObject() patched, in-game music is now played
+;		  (issue 5334)
+
 ; 21-Jul-2016	- AGA version: ENV assign wasn't null-terminated so the
 ;		  game didn't start as there was a "Please insert volume ENV:"
 ;		  request (invisible due to BLACKSCREEN)
@@ -46,8 +54,10 @@
 	INCDIR	SOURCES:Include/
 	INCLUDE	whdload.i
 	INCLUDE	whdmacros.i
+	INCLUDE	workbench/workbench.i
+	INCLUDE	intuition/intuition.i
 
-AGA	= 1			; set to 1 to create slave for AGA version
+AGA	= 0			; set to 1 to create slave for AGA version
 
 ; absolute skip
 PL_SA	MACRO
@@ -144,7 +154,7 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"Version 1.02 (21.07.2016)",0
+		dc.b	"Version 1.03 (08.03.2022)",0
 slv_config	dc.b	"C1:B:Unlimited Lives;"
 		dc.b	"C2:B:In-Game Keys"
 		dc.b	0
@@ -233,6 +243,11 @@ _bootdos
 	bsr.b	.set
 	move.w	#$6004,$106e(a3)
 .notrainer
+
+	lea	Tune(pc),a2
+	move.l	a3,a4
+	add.l	#$d562,a4
+	move.l	a4,(a2)
 
 	jmp	(a3)
 
@@ -360,7 +375,105 @@ PT_GAME	dc.l	$d4fe,$d678,$8b56,PLGAME-PT_GAME	; v4.0
 
 PLGAME	PL_START
 	PL_PSS	$33d4,.keys,2
+
+	; Tooltype parsing without icon.library
+	PL_SA	$643e,$645c		; skip opening icon.library
+	PL_PS	$64b2,.GetDiskObject
+	PL_SA	$64c2,$64c8
+	PL_PS	$64dc,.Find_Tool_Type
+	PL_PS	$64f2,.Find_Tool_Type
+	PL_PS	$6508,.Find_Tool_Type
+	PL_PS	$651e,.Find_Tool_Type
+	PL_PS	$6534,.Find_Tool_Type
+	PL_PS	$654a,.Find_Tool_Type
+	PL_PS	$656a,.Find_Tool_Type
+	PL_PS	$6590,.Find_Tool_Type
+	PL_PS	$65b6,.Find_Tool_Type
+	PL_PS	$662a,.Find_Tool_Type
+	PL_PSS	$6672,.Find_Tool_Type2,4
 	PL_END
+
+
+.GetDiskObject
+	movem.l	a0-a6,-(a7)
+	lea	.Icon_Name(pc),a0
+	move.l	a0,a3
+	move.l	_resload(pc),a2
+	jsr	resload_GetFileSize(a2)
+	tst.l	d0
+	beq.b	.no_icon_file
+
+	move.l	$4.w,a6
+	moveq	#MEMF_PUBLIC,d1
+	jsr	_LVOAllocMem(a6)
+	tst.l	d0
+	beq.b	.no_icon_file
+
+	move.l	d0,d7
+	move.l	a3,a0
+	move.l	d7,a1
+	jsr	resload_LoadFile(a2)
+
+	move.l	d7,a0
+	bsr	Find_Tool_Types
+	move.l	d0,d2
+	lea	.Tool_Types(pc),a0
+	move.l	d2,(a0)
+
+.no_icon_file
+	movem.l	(a7)+,a0-a6
+	tst.l	d0
+	rts
+
+
+.Find_Tool_Type2
+	move.l	Tune(pc),a1
+
+; a1.l: tool type to find
+
+.Find_Tool_Type
+	move.l	a1,a3
+
+	moveq	#-1,d5
+.get_string_length
+	tst.b	(a1)+
+	dbeq	d5,.get_string_length
+	not.l	d5
+
+	move.l	.Tool_Types(pc),a2
+	move.l	(a2)+,d6
+	lsr.l	#2,d6
+	subq.l	#1,d6
+.loop	move.l	a2,a0
+	move.l	(a0)+,d0
+	
+	move.l	a3,a1
+	move.l	d5,d0	
+	bsr	StringCompare
+	tst.l	d0
+	bne.b	.check_next_entry
+	cmp.b	#"=",(a0)+
+	beq.b	.tool_type_found
+
+.check_next_entry
+	add.l	(a2)+,a2
+	subq.l	#1,d6
+	bne.b	.loop
+
+	sub.l	a0,a0
+
+.tool_type_found
+	move.l	a0,d0
+	rts
+
+
+.Tool_Types	dc.l	0
+
+
+.Icon_Name
+	dc.b	"Megaball.info",0
+	cnop	0,2
+
 
 .keys	move.b	$19(a5),d0
 
@@ -394,8 +507,102 @@ LIVESTR		dc.l	0
 INGAMEKEYS	dc.l	0
 		dc.l	TAG_END
 
+Tune	dc.l	0
 
 
 
+
+; Find the start of the tool types in an icon.
+; StingRay, 07.03.2022, done for the MegaBall patch.
+;
+; a0.l: icon data
+; ----
+; d0.l: offset to tool types or 0 if none found
+
+Find_Tool_Types
+	moveq	#0,d0
+	cmp.w	#WB_DISKMAGIC,do_Magic(a0)
+	bne.w	.not_an_icon
+	cmp.w	#WB_DISKVERSION,do_Version(a0)
+	bne.w	.not_an_icon
+
+	cmp.b	#WBTOOL,do_Type(a0)
+	bne.w	.not_a_tool_icon
+
+	; it's a tool icon, find the tool types
+	tst.l	do_ToolTypes(a0)
+	beq.b	.icon_has_no_tool_types
+
+
+	lea	do_SIZEOF(a0),a1	; a1: start of icon data
+
+	; The optional drawer data structure doesn't need
+	; to be handled as icon type is WBTOOL so it's safe to
+	; assume that no drawer data exists.
+
+	; a1: icon image data
+	tst.l	do_Gadget+gg_GadgetRender(a0)
+	beq.b	.no_first_image
+	bsr.b	.Skip_Image_Data
+.no_first_image
+
+	tst.l	do_Gadget+gg_SelectRender(a0)
+	beq.b	.no_second_image
+	bsr.b	.Skip_Image_Data
+.no_second_image
+
+
+	tst.l	do_DefaultTool(a0)
+	beq.b	.no_default_tool
+	add.l	(a1)+,a1		; skip default tool text
+.no_default_tool
+
+	; a1: start of tool types
+	move.l	a1,d0
+
+.icon_has_no_tool_types
+
+
+.not_a_tool_icon
+
+.not_an_icon
+	rts
+
+
+; a1.l: image data structure
+.Skip_Image_Data
+	move.w	ig_Width(a1),d1		; width
+	add.w	#15,d1
+	lsr.w	#4,d1
+	add.w	d1,d1			; line width
+	mulu.w	ig_Height(a1),d1
+	add.w	d1,d1
+	add.w	d1,a1
+	add.w	#ig_SIZEOF,a1
+	rts
+
+
+; a0.l: string 1
+; a1.l: string 2
+; d0.l: length 
+; ----
+; d0.l: result
+
+StringCompare
+.loop	subq.l	#1,d0
+	blt.b	.exit
+	move.b	(a1)+,d1
+	cmp.b	(a0)+,d1
+	bne.b	.differs
+	tst.b	d1
+	bne.b	.loop
+.exit	moveq	#0,d0
+.end	rts
+
+.differs
+	moveq	#1,d0
+	bgt.b	.end
+	moveq	#-1,d0
+	rts
 
 
