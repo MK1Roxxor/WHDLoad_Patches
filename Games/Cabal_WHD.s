@@ -21,6 +21,34 @@
 *** History			***
 ***********************************
 
+; 12-Mar-2022	- timing for level pictures (fade up/fade down) fixed
+;		- simplified JOTD's approach to read CD32 pad in the
+;		  level 3 interrupt
+;		- interrupt acknowledge for blitter and vertical blank
+;		  interrupts fixed
+;		- NTSC compatibility is now optional (CUSTOM5) as it
+;		  causes visual bugs when joypad support is enabled
+
+; 11-Mar-2022	- patched level complete tune, it is now fully played
+
+; 10-Mar-2022	- support for cracked version (added by JOTD) removed,
+;		  no need to support it, original game is easily available
+;		- debug key removed from keyboard interrupt
+;		- Level select uses CUSTOM2 again, Joypad support CUSTOM3
+;		  (trainer options belong together so changing these
+;		  CUSTOM tooltypes does not make sense hence the change
+;		  by JOTD has been reverted)
+;		- single player game can now be started with fire if
+;		  joypad support has not been enabled (F1 will still work
+;		  too, of course)
+
+
+;    Feb-2021   - reassembled with latest ReadJoyPad.s source
+;      (JOTD)	- added joystick/joypad detection
+;
+
+; 19-Feb-2017	- made the game NTSC compatible
+
 ; 30-Aug-2016	- some more trainer options and in-game keys added
 ;		- high-score saving disabled if any trainers are used
 
@@ -38,7 +66,7 @@
 
 	INCDIR	SOURCES:INCLUDE/
 	INCLUDE	WHDLoad.i
-	
+	include whdmacros.i
 
 FLAGS		= WHDLF_NoError|WHDLF_ClearMem
 QUITKEY		= $59		; F10
@@ -92,21 +120,23 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	dc.b	"C2:L:Start at Level:1,2,3,4,5,6,7,8,10,11,12,13,14,"
 	dc.b	"15,16,17,18,19,20,21,22;"
 	dc.b	"C3:B:Enable Joypad support;"
-	dc.b	"C4:B:Disable Blitter Wait Patches:"
+	dc.b	"C4:B:Disable Blitter Wait Patches;"
+	dc.b	"C5:B:NTSC Compatibility (may cause visual bugs!)"
 	dc.b	0
 
 
 .dir	IFD	DEBUG
-	dc.b	"SOURCES:WHD_Slaves/Cabal",0
+	dc.b	"SOURCES:WHD_Slaves/Games/Cabal",0
 	ENDC
-
+    
 .name	dc.b	"Cabal",0
 .copy	dc.b	"1989 Ocean",0
-.info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
+.info	dc.b	"installed by StingRay/[S]carab^Scoopex",10,10
+	dc.b    "Joypad fix by JOTD",10,10
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.2a (30.08.2016)",0
+	dc.b	"Version 1.3 (12.03.2022)",0
 
 HighName	dc.b	"Cabal.high",0
 
@@ -124,6 +154,8 @@ resload	dc.l	0
 Patch	lea	resload(pc),a1
 	move.l	a0,(a1)
 	move.l	a0,a2
+
+    bsr _detect_controller_types
 
 	lea	TAGLIST(pc),a0
 	jsr	resload_Control(a2)
@@ -143,6 +175,7 @@ Patch	lea	resload(pc),a1
 	move.l	a5,a0
 	move.l	d5,d0
 	jsr	resload_CRC16(a2)
+	lea	PLBOOT(pc),a0    
 	cmp.w	#$41b4,d0		; SPS 638
 	beq.b	.ok
 
@@ -152,7 +185,7 @@ Patch	lea	resload(pc),a1
 
 
 ; patch it
-.patch	lea	PLBOOT(pc),a0
+.patch	
 	move.l	a5,a1
 	jsr	resload_Patch(a2)
 
@@ -182,15 +215,12 @@ KillSys	move.w	#$7fff,$dff09a
 	move.w	#$7fff,$dff09c
 	rts
 
-
-
-
 PLBOOT	PL_START
-	PL_PSS	$50,.load,4
-	PL_PSS	$88,.load,4
-	PL_PSS	$e0,.load,4
-	PL_PSS	$102,.load,4
-	PL_PSS	$124,.load,4
+	PL_PSS	$50,load,4
+	PL_PSS	$88,load,4
+	PL_PSS	$e0,load,4
+	PL_PSS	$102,load,4
+	PL_PSS	$124,load,4
 	PL_P	$134,BK_DECRUNCH	; relocate ByteKiller decruncher
 	PL_PS	$5e,.patchocean
 	PL_PS	$ae,.patchintro
@@ -198,6 +228,8 @@ PLBOOT	PL_START
 	PL_END
 
 .patchgame
+    bsr _detect_controller_types
+
 	lea	HighName(pc),a0
 	move.l	resload(pc),a2
 	jsr	resload_GetFileSize(a2)
@@ -229,7 +261,7 @@ PLBOOT	PL_START
 	move.l	resload(pc),a2
 	jmp	resload_Patch(a2)
 
-.load	move.l	a1,-(a7)		; save IOStd
+load	move.l	a1,-(a7)		; save IOStd
 	movem.l	$24(a1),d1/a0
 	move.l	$2c(a1),d0
 	moveq	#1,d2
@@ -248,8 +280,24 @@ PLHIGH	PL_START
 	PL_PSS	$cb2,wblit2,2
 	PL_P	$af6,AckVBI2
 	PL_P	$afc,.savehigh
+    PL_PSS  $46e,.highloop,4
+    PL_PSS  $36E,.highloop,2
 	PL_END
-	
+
+.highloop
+    move.w  #1630,d6
+.bd_loop1
+	move.w  d6,-(a7)
+    move.b	$dff006,d6	; VPOS
+.bd_loop2
+	cmp.b	$dff006,d6
+	beq.s	.bd_loop2
+	move.w	(a7)+,d6
+	dbf	d6,.bd_loop1
+.skipd    
+	rts
+     
+        
 .savehigh
 	bsr	RestoreCop
 
@@ -301,26 +349,44 @@ PLGAME	PL_START
 	PL_ENDIF
 
 
-	;PL_B	$14c62,$4a		; unlimited lives
-	;PL_R	$158c2			; no collision
-	;PL_B	$163ce,$4a		; unlimited grenades
 
-	;PL_W	$2e+2,2
 
 	PL_IFC3
-	PL_PS	$155b0,.readjoy
+    PL_PS   $375E2-$23000,.readfire_p1
+    PL_PSS  $375f6-$23000,.readfire_p2,2
+    PL_ORW    $384a6-$23000+2,$20   ; enable vblank
+	PL_PS	$385b0-$23000,.readjoy
+    PL_PS   $386de-$23000,.readfire_p1
+    PL_PSS  $38816-$23000,.readfire_p2,2
+
+	PL_PS	$155a2,.Handle_Level3_Interrupt
+
+    PL_W    $3a8a0-$23000+2,$1000   ; don't disable vblank
+    
+  
+    
+    
 	PL_PSA	$16348,.throwgrenades2,$1635a	; player 2
 	PL_B	$1635a,$67			; bne -> beq
 
 	PL_PSA	$16362,.throwgrenades1,$16376	; player 1
 	PL_B	$16376,$67			; bne -> beq
+ 
+    ; skip grenade flip-flop we have our mechanism
+    PL_S    $3937a-$23000,$388-$37A
 
 	PL_PSS	$f6,.startgame,2
 	
+	PL_ELSE
+	PL_PSS	$f6,.Start_Single_Player_Game_With_Fire,2
 	PL_ENDIF
 
 
-; disable Blitter wait patches if CUSTOM4 is used
+	PL_IFC5
+	PL_PSA	$15e40,WaitRaster,$15e56	; replace PAL only raster wait
+	PL_ENDIF
+
+	; disable Blitter wait patches if CUSTOM4 is used
 	PL_IFC4
 	PL_ELSE
 	
@@ -337,46 +403,172 @@ PLGAME	PL_START
 
 
 	PL_P	$158a0,.ackCop
-	PL_P	$158b0,.ackVBI
+	PL_P	$158b0,.ackVBI_BLT
+
+	; skip delays that are not needed (these delays are
+	; probably for letting the drive motor stop)
+	PL_S	$f0,6				; before selecting game type
+	PL_S	$15e,6
+
+
+	; fix timing/delays
+	PL_PS	$48e,.Level_Complete_Delay
+	PL_PS	$177fc,.Picture_Delay		; display level picture
+	PL_PS	$17816,.Picture_Delay2		; fade down level picture
+
+	PL_P	$1783a,.Delay_7D00
 	PL_END
+
+.Picture_Delay
+	moveq	#2*10,d0
+.delay	move.l	resload(pc),a0
+	jmp	resload_Delay(a0)
+
+; Wait for fade down to finish
+.Picture_Delay2
+	moveq	#1*10,d0
+	bra.b	.delay
+
+
+; Wait for the "Level Complete" tune to end.
+; In the original code, this is done by using a delay, this fix
+; does it properly by using the replayer data to check if the tune
+; has been fully played
+.Level_Complete_Delay
+	tst.b	$23000+$15936			; in boss levels the tune is
+	beq.b	.replay_not_enabled		; not played
+	cmp.l	#$23000+$36520,$23000+$182c0
+	bne.b	.level_complete_tune_not_playing
+
+.wait_for_pattern2
+	tst.l	$23000+$182c4
+	beq.b	.wait_for_pattern2
+
+.level_complete_tune_not_playing
+
+.replay_not_enabled
+	rts
+
+
+; Emulate empty dbf loop which loops $7d00 times.
+.Delay_7D00
+	move.w	#5*312+$9b,d7
+	move.w	d0,-(a7)
+.wait_raster_lines
+	move.b	$dff000,d0
+.same_raster_line
+	cmp.b	$dff000,d0
+	beq.b	.same_raster_line
+	dbf	d7,.wait_raster_lines	
+	move.w	(a7)+,d0
+	dbf	d6,.Delay_7D00
+	rts
+
+
+.big_delay
+    move.l  joy1(pc),d7
+    btst    #JPB_BTN_RED,d7
+    bne.b   .skipd
+    
+    move.w  #$800,d7
+.bd_loop1
+	move.w  d7,-(a7)
+    move.b	$dff006,d7	; VPOS
+.bd_loop2
+	cmp.b	$dff006,d7
+	beq.s	.bd_loop2
+	move.w	(a7)+,d7
+	dbf	d7,.bd_loop1
+.skipd    
+	rts
+
+    
+    
+.readfire_p1
+    move.l  d0,-(a7)
+    move.l  joy1(pc),d0
+    ;bclr    #31,d0 ; not needed, always positive
+    btst    #JPB_BTN_RED,d0
+    bne.b   .fire
+    moveq.l #-1,d0  ; sets N flag if not pressed
+.fire
+    movem.l (a7)+,d0
+    rts
+.readfire_p2
+    move.l  d0,-(a7)
+    move.l  joy0(pc),d0
+    not.l   d0
+    btst    #JPB_BTN_RED,d0
+    movem.l (a7)+,d0
+    rts
+    
+    
+.Handle_Level3_Interrupt
+	move.w	$dff01e,d0
+	btst	#5,d0
+	beq.b	.Not_Vertical_Blank_Interrupt
+	bsr	_joystick
+	moveq	#0,d0			; clear all interrupt requests
+.Not_Vertical_Blank_Interrupt
+	rts
+
+
 
 .ackCop	move.w	#1<<4,$dff09c
 	move.w	#1<<4,$dff09c
 	rte
 
-.ackVBI	move.w	#1<<5|1<<6,$dff09c
+.ackVBI_BLT
 	move.w	#1<<5|1<<6,$dff09c
-	rte
+	move.w	#1<<5|1<<6,$dff09c
+	rte	
+
+
+
 
 .throwgrenades2
-	lea	joy1(pc),a0
+	movem.l	d0-d1/a1,-(a7)
+	move.l	joy1(pc),d0
+	lea	.prev_joy1(pc),a1
 	bra.b	.throwgrenades
-	
+
 .throwgrenades1
-	lea	joy0(pc),a0
+	movem.l	d0-d1/a1,-(a7)
+	move.l	joy0(pc),d0
+	lea	.prev_joy0(pc),a1
 	
 
 .throwgrenades
-	movem.l	d0/a0,-(a7)
-	move.l	(a0),d0
-	clr.l	(a0)
+    move.l  (a1),d1     ; get previous value
+    move.l  d0,(a1)     ; store previous value
 	btst	#JPB_BTN_BLU,d0
-	movem.l	(a7)+,d0/a0
+    beq.b   .out       ; not pressed: don't throw (Z=1)
+    not.l   d1      ; negate
+	btst	#JPB_BTN_BLU,d1 ; previous not pressed: ok throw (Z=0)
+.out
+	movem.l	(a7)+,d0-d1/a1
 	rts
-
+.prev_joy0
+    dc.l    0
+.prev_joy1
+    dc.l    0
 
 .readjoy
-	bsr	ReadAllJoys
-
+    lea .prev_value(pc),a0
 	move.l	joy0(pc),d0
 	or.l	joy1(pc),d0
-	btst	#JPB_BTN_PLAY,d0
+    and.l   #JPF_BTN_PLAY,d0
+    move.l  d0,(a0)
+    cmp.l   d0,d1
+    beq.b   .nopause
+	tst.l   d0
 	beq.b	.nopause
 	not.w	$23000+$1558e		; toggle pause flag
 .nopause
 
 	jmp	$23000+$17ca2		; original code
-
+.prev_value
+    dc.l    0
 
 ; fire 1: start 1 player game
 ; fire 2: start 2 player game
@@ -386,6 +578,7 @@ PLGAME	PL_START
 	
 	btst	#JPB_BTN_RED,d0
 	beq.b	.no1pl
+.emulate_F1_Key
 	move.b	#$50,$23000+$1558a
 
 .no1pl	btst	#JPB_BTN_BLU,d0
@@ -393,9 +586,15 @@ PLGAME	PL_START
 	move.b	#$51,$23000+$1558a
 .no2pl
 
+.no_fire_button
 	cmp.b	#$50,$23000+$1558a
 	rts
-	
+
+
+.Start_Single_Player_Game_With_Fire
+	btst	#7,$bfe001
+	bne.b	.no_fire_button
+	bra.b	.emulate_F1_Key
 
 
 .load	move.w	d1,d0
@@ -640,22 +839,7 @@ SetLev2IRQ
 	movem.l	(a7)+,d0-a6
 .nocustom	
 	
-
-
 	or.b	#1<<6,$e00(a1)			; set output mode
-
-
-
-	IFD	DEBUG
-	cmp.b	HEADER+ws_keydebug(pc),d0	
-	bne.b	.nodebug
-	movem.l	(a7)+,d0-d1/a0-a2
-	move.w	(a7),6(a7)			; sr
-	move.l	2(a7),(a7)			; pc
-	clr.w	4(a7)				; ext.l sr
-	bra.b	.debug
-.nodebug
-	ENDC
 
 	cmp.b	HEADER+ws_keyexit(pc),d0
 	beq.b	.exit
@@ -674,10 +858,6 @@ SetLev2IRQ
 	movem.l	(a7)+,d0-d1/a0-a2
 	rte
 
-	IFD	DEBUG
-.debug	pea	(TDREASON_DEBUG).w
-	bra.w	EXIT
-	ENDC
 
 .exit	bra.w	QUIT
 
@@ -814,5 +994,5 @@ BK_DECRUNCH
 	dbf	d1,.getbit
 	rts
 
-
-	include	ReadJoypad.s
+IGNORE_JOY_DIRECTIONS
+	include	SOURCES:WHD_Slaves/Games/Cabal/ReadJoypad.s
