@@ -7,11 +7,66 @@
 ; - 68000 quitkey support
 ; - default quitkey changed to Del as F10 is used in the game
 
+; V1.2, 12/13.03.2022
+; - unlimited lives trainer added
+; - unlimited energy trainer added
+; - in-game keys added
+; - demo can be skipped with space or fire
+; - game can be started with space or fire
+
 	INCDIR	SOURCES:INCLUDE/
 	INCLUDE	WHDLoad.i
+
+; Trainer options
+TRB_LIVES		= 1		; unlimited lives
+TRB_ENERGY		= 2		; unlimited energy
+TRB_KEYS		= 3		; in-game keys
+
 	
+RAWKEY_1	= $01
+RAWKEY_2	= $02
+RAWKEY_3	= $03
+RAWKEY_4	= $04
+RAWKEY_5	= $05
+RAWKEY_6	= $06
+RAWKEY_7	= $07
+RAWKEY_8	= $08
+RAWKEY_9	= $09
+RAWKEY_0	= $0A
+
+RAWKEY_Q	= $10
+RAWKEY_W	= $11
+RAWKEY_E	= $12
+RAWKEY_R	= $13
+RAWKEY_T	= $14
+RAWKEY_Y	= $15		; English layout
+RAWKEY_U	= $16
+RAWKEY_I	= $17
+RAWKEY_O	= $18
+RAWKEY_P	= $19
+
+RAWKEY_A	= $20
+RAWKEY_S	= $21
+RAWKEY_D	= $22
+RAWKEY_F	= $23
+RAWKEY_G	= $24
+RAWKEY_H	= $25
+RAWKEY_J	= $26
+RAWKEY_K	= $27
+RAWKEY_L	= $28
+
+RAWKEY_Z	= $31		; English layout
+RAWKEY_X	= $32
+RAWKEY_C	= $33
+RAWKEY_V	= $34
+RAWKEY_B	= $35
+RAWKEY_N	= $36
+RAWKEY_M	= $37
+
+RAWKEY_HELP	= $5f
+
 HEADER	SLAVE_HEADER		; ws_Security+ws_ID
-	DC.W	14		; ws_Version
+	DC.W	17		; ws_Version
 	DC.W	7		; ws_Flags
 	DC.L	$80000		; ws_BaseMemSize
 	DC.L	0		; ws_ExecInstall
@@ -25,11 +80,27 @@ HEADER	SLAVE_HEADER		; ws_Security+ws_ID
 	DC.W	.copy-HEADER	; ws_copy
 	DC.W	.info-HEADER	; ws_info
 
+; v16
+	dc.w	0		; ws_kickname
+	dc.l	0		; ws_kicksize
+	dc.w	0		; ws_kickcrc
+
+; v17
+	dc.w	.config-HEADER	; ws_config
+
+
+.config	dc.b	"C1:X:Unlimited Lives:",TRB_LIVES+"0",";"
+	dc.b	"C1:X:Unlimited Energy:",TRB_ENERGY+"0",";"
+	dc.b	"C1:X:In-Game Keys:",TRB_KEYS+"0",";"
+
 .name	dc.b	"Airball",0
 .copy	dc.b	"1987-89 Microdeal",0
 .info	dc.b	"adapted by Mr.Larmer & StingRay",10
-	dc.b	"Version 1.1 (27.10.2017)",-1
-	dc.b	"Greetings to Helmut Motzkau",0
+	dc.b	"Version 1.2 (13.03.2022)",-1
+	dc.b	"Greetings to Helmut Motzkau",-1
+	dc.b	"In-Game Keys:",-1
+	dc.b	"U: Toggle Unlimited Lives",10
+	dc.b	"E: Toggle Unlimited Energy",0 
 	CNOP	0,2
 
 TAGLIST		dc.l	WHDLTAG_ATTNFLAGS_GET
@@ -106,7 +177,73 @@ PLGAME	PL_START
 	PL_P	$2168,.ackLev2
 	PL_PS	$20fa,.checkquit
 	PL_S	$1f24,$1f42-$1f24	; don't patch exception vectors
+
+	; Unlimited Lives
+	PL_IFC1X	TRB_LIVES
+	PL_B	$34a8,$4a
+	PL_ENDIF
+
+	; Unlimited Energy
+	PL_IFC1X	TRB_ENERGY
+	PL_W	$2d7a,$4e75
+	PL_ENDIF
+
+	; In-Game Keys
+	PL_IFC1X	TRB_KEYS
+	PL_PS	$20fa,.Handle_Keys
+	PL_ENDIF
+
+	PL_PS	$136,.Get_Skip_Demo_Text_Pointer
+	PL_PS	$188,.Check_Space_Or_Fire
+	PL_PS	$1b4,.Check_Space_Or_Fire
+	PL_PS	$13e2,.Check_Space_Or_Fire
 	PL_END
+
+.Get_Skip_Demo_Text_Pointer
+	lea	.Text_Skip_Demo(pc),a0
+	rts
+
+.Check_Space_Or_Fire
+	btst	#7,$bfe001
+	bne.b	.Fire_Not_Pressed
+	st	-(a7)
+	tst.w	(a7)+
+	rts
+
+.Fire_Not_Pressed
+	tst.b	$600+$76a8.w		; original code
+.exit	rts
+
+.Text_Skip_Demo
+	dc.b	1,60
+	dc.b	1,1
+	dc.b	"PRESS THE SPACEBAR",0
+	dc.b	0,80
+	dc.b	"OR FIRE TO SKIP DEMO",0,0
+	dc.b	0
+	CNOP	0,2
+
+
+.Handle_Keys
+	bsr.b	.checkquit
+
+	; d1.b: raw key
+	cmp.b	#RAWKEY_E,d1
+	beq.b	.Toggle_Unlimited_Energy
+
+	cmp.b	#RAWKEY_U,d1
+	beq.b	.Toggle_Unlimited_Lives
+	rts
+
+
+
+.Toggle_Unlimited_Energy
+	eor.w	#$cc,$600+$2d7a		; jsr handle_collisions <-> rts
+	rts
+
+.Toggle_Unlimited_Lives
+	eor.b	#$19,$600+$34a8		; subq.w <-> tst.w
+	rts
 
 .checkquit
 	move.b	$bfec01,d0
@@ -141,7 +278,7 @@ PLGAME	PL_START
 EXIT	move.l	resload(pc),-(a7)
 	addq.l	#resload_Abort,(a7)
 	rts
-	
+
 
 ; d0.b: side (0/1)
 ; d6.w: track
