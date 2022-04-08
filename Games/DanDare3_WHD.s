@@ -21,6 +21,8 @@
 *** History			***
 ***********************************
 
+; 08-Apr-2022	- keyboard problems on 68000 machines fixed (issue #5561)
+
 ; 30-Oct-2018	- high score load/save added
 ;		- more trainer options added
 ;		- in-game keys disabled when entering high score name
@@ -41,7 +43,7 @@
 
 FLAGS		= WHDLF_NoError|WHDLF_ClearMem|WHDLF_EmulTrap
 QUITKEY		= $46		; Del
-DEBUG
+;DEBUG
 
 ; absolute skip
 PL_SA	MACRO
@@ -101,7 +103,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.1 (30.10.2018)",0
+	dc.b	"Version 1.2 (08.04.2022)",0
 Name	dc.b	"dan",0
 HighName	dc.b	"Dan.high",0
 	CNOP	0,2
@@ -512,8 +514,8 @@ PLGAME	PL_START
 .LoadFile
 	move.l	d1,a1
 	move.l	resload(pc),a2
-	jmp	resload_LoadFileDecrunch(a2)
-
+	jsr	resload_LoadFileDecrunch(a2)
+	bra.w	SetLev2IRQ
 
 .AllocMem
 	lea	.free(pc),a0
