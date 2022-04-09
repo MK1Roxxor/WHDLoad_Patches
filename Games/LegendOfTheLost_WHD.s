@@ -21,6 +21,8 @@
 *** History			***
 ***********************************
 
+; 09-Apr-2022	- keyboard problems on 68000 machines fixed (issue #5559)
+
 ; 06-Apr-2021	- support for another version added
 
 ; 03-Mar-2013	- work started
@@ -85,7 +87,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.01 (06.04.2021)",0
+	dc.b	"Version 1.02 (09.04.2022)",0
 
 	CNOP	0,2
 
@@ -229,6 +231,7 @@ PLGAME	PL_START
 	move.l	$1000+$51bc.w,a1
 	move.l	resload(pc),a2
 	jsr	resload_LoadFile(a2)
+	bsr	SetLev2IRQ
 	movem.l	(a7)+,d0-a6
 	rts
 
