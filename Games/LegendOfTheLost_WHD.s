@@ -21,6 +21,8 @@
 *** History			***
 ***********************************
 
+; 06-Apr-2021	- support for another version added
+
 ; 03-Mar-2013	- work started
 ;		- CPU dependent delays fixed, all OS stuff patched,
 ;		  trainers added (unlimited lives, select starting level),
@@ -83,7 +85,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.00 (03.05.2013)",0
+	dc.b	"Version 1.01 (06.04.2021)",0
 
 	CNOP	0,2
 
@@ -123,6 +125,8 @@ Patch	lea	resload(pc),a1
 	jsr	resload_CRC16(a2)
 	lea	PLGAME(pc),a3
 	cmp.w	#$6019,d0		; SPS 2971
+	beq.b	.ok
+	cmp.w	#$603e,d0		; Christoph
 	beq.b	.ok
 
 ; unknown version
