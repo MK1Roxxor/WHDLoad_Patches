@@ -1,4 +1,6 @@
-; V1.2, StingRay
+; V1.3, StingRay
+
+; 10.04.2022	- 68000 quitkey support (issue #5557)
 
 ; 05.04.2022	- tried to make climb/dive work with the new approach,
 ;		  no success yet (and no big deal either)
@@ -39,7 +41,7 @@
 
 FLAGS		= WHDLF_NoError|WHDLF_ClearMem|WHDLF_EmulTrap|WHDLF_NoDivZero
 QUITKEY		= $46		; Del
-DEBUG
+;DEBUG
 
 
 RAWKEY_1	= $01
@@ -134,7 +136,7 @@ _dir		dc.b	"data",0
 _name		dc.b	"Operation Harrier",0
 _copy		dc.b	"1990 US Gold",0
 _info		dc.b	"installed & fixed by Bored Seal & StingRay",10
-		dc.b	"V1.2 (05-Apr-2022)",0
+		dc.b	"V1.3 (10-Apr-2022)",0
 		even
 
 _Start		lea	(_resload,pc),a1
@@ -253,9 +255,19 @@ PLGAME	PL_START
 	PL_PS	$1d28,.Abort_Landing	
 	PL_PS	$5e96,.Dive_or_Climb
 	PL_ENDIF
+
+	PL_PS	$bf68,.Check_Quit_Key
 	PL_END
 
 
+.Check_Quit_Key
+	move.b	$bfec01,d0
+	move.l	d0,-(a7)
+	ror.b	d0
+	not.b	d0
+	bsr	Check_Quit_Key
+	move.l	(a7)+,d0
+	rts
 
 ; -------------------------------------------------------------------------
 ; Initiate landing mode with CD32 "PLAY" + "REVERSE" buttons
@@ -438,6 +450,19 @@ LoadFile	movem.l a0-a2/d1,-(sp)
 		movem.l	(sp)+,a0-a2/d1
 		moveq	#0,d0
 		rts
+
+; ---------------------------------------------------------------------------
+
+; d0.b: raw key code
+Check_Quit_Key
+	cmp.b	_base+ws_keyexit(pc),d0
+	beq.b	QUIT
+	rts
+
+QUIT	pea	(TDREASON_OK).w
+	bra.b	_end
+
+
 
 Unsupported	pea	(TDREASON_WRONGVER).w
 _end		move.l	(_resload,pc),a2
