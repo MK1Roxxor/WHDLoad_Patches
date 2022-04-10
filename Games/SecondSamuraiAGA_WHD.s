@@ -21,6 +21,18 @@
 *** History			***
 ***********************************
 
+; 10-Apr-2022	- joystick button handling code adapted to allow easy
+;		  button remapping
+;		- CUSTOM5 tooltype added to select fire2/CD32 joypad blue
+;		  button functionality (default: jump)
+;		- invincibility trainer option improved: when entering
+;		  certain level codes, the game loads data instead of
+;		  starting a game immediately. To start a game, the
+;		  corresponding menu item has to be selected again which
+;		  turned off the invincibility (as the "Toggle_Invincibility"
+;		  was used). Invincibility is now always set (i.e. it's not
+;		  toggled anymore) to fix this problem.
+
 ; 03-Apr-2022	- NoVBRMove quitkey support
 
 ; 01-Apr-2022	- all necessary changes done, game fully works now
@@ -131,7 +143,8 @@ HEADER	SLAVE_HEADER			; ws_security + ws_ID
 	dc.b	"C1:X:Unlimited Weapons:",TRB_WEAPONS+"0",";"
 	dc.b	"C1:X:In-Game Keys (Press Help during Game):",TRB_KEYS+"0",";"
 	dc.b	"C2:B:Enable Joystick in Port 1 in Menu;"
-	dc.b	"C4:B:Enable CD32 Controls;"
+	dc.b	"C4:B:Enable CD32/2-Button Joystick Controls;"
+	dc.b	"C5:L:Fire 2/CD32 Blue Button:Jump,Select Weapon"
 	dc.b	0
 
 .dir	IFD	DEBUG
@@ -147,7 +160,7 @@ HEADER	SLAVE_HEADER			; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.2A (03.04.2022)",0
+	dc.b	"Version 1.3 (10.04.2022)",0
 
 Highscore_Name	dc.b	"SecondSamurai.high",0
 File_Name	dc.b	"SecondSamuraiX_XX",0
@@ -167,6 +180,8 @@ TRAINER_OPTIONS		dc.l	0
 CPU_FLAGS		dc.l	0
 			dc.l	WHDLTAG_CUSTOM3_GET
 NO_BLITTER_WAITS	dc.l	0
+			dc.l	WHDLTAG_CUSTOM5_GET
+FIRE2_BUTTON_FUNCTION	dc.l	0
 			dc.l	TAG_DONE
 
 resload	dc.l	0
@@ -185,6 +200,7 @@ Patch	lea	resload(pc),a1
 	; detect CD32 controller
 	bsr	_detect_controller_types
 
+	bsr	Initialise_Joystick_Buttons
 
 	moveq	#1,d0
 	bsr	Set_Disk_Number
@@ -706,7 +722,8 @@ PL_GAME	PL_START
 
 .Set_Invincibility
 	move.l	(a7),a6
-	bsr.b	.Toggle_Invincibility
+	st	$b6(a6)
+	move.b	#$4a,$1500+$888c
 	movem.l	(a7)+,a0-a6
 	rts
 
@@ -837,10 +854,24 @@ Save_Highscores
 ; --------------------------------------------------------------------------
 ; CD32 controls
 
-; Routine is called in level 3 interrupt.
+Initialise_Joystick_Buttons
+	move.l	FIRE2_BUTTON_FUNCTION(pc),d0
+	beq.b	.default_settings_wanted
+
+	; fire2 = select weapon, CD32 green = jump
+	lea	Button_Jump(pc),a0
+	move.l	#JPB_BTN_GRN,(a0)
+	move.l	#JPB_BTN_BLU,Button_Weapon_Select-Button_Jump(a0)
+
+
+.default_settings_wanted
+	rts
+
+; Read jyoypad in level 3 interrupt.
 Read_CD32_Pad
 	bsr	_joystick
 	bsr	Handle_CD32_Buttons
+
 	movem.l	(a7)+,d0-a6
 	rte
 
@@ -848,7 +879,11 @@ Read_CD32_Pad
 Enable_Button_Jump
 	move.w	$dff00c,d0
 	move.l	joy1(pc),d3
-	btst	#JPB_BTN_GRN,d3
+
+	;btst	#JPB_BTN_GRN,d3
+	move.l	Button_Jump(pc),d4
+	btst	d4,d3
+
 	beq.b	.jump_button_not_pressed
 	move.w	#1<<8,d0
 .jump_button_not_pressed
@@ -863,21 +898,29 @@ Enable_Button_Jump
 ; P: pause
 ; Escape: return to main menu
 
+Button_Weapon_Select		dc.l	JPB_BTN_GRN
+Button_Jump			dc.l	JPB_BTN_BLU
+Button_Toggle_Pause		dc.l	JPB_BTN_PLAY
+Button_Volume_Down		dc.l	JPB_BTN_REVERSE
+Button_Volume_Up		dc.l	JPB_BTN_FORWARD
+Button_Show_Help		dc.l	JPB_BTN_YEL
+
+
 
 Button_Table_Player1
-	dc.l	JPB_BTN_BLU,RAWKEY_LEFT_SHIFT
-	dc.l	JPB_BTN_PLAY,RAWKEY_P|1<<RAWKEY_B_DELAY_RELEASE
-	dc.l	JPB_BTN_REVERSE,RAWKEY_C
-	dc.l	JPB_BTN_FORWARD,RAWKEY_V
-	dc.l	JPB_BTN_YEL,RAWKEY_HELP
+	dc.l	Button_Weapon_Select-Button_Table_Player1,RAWKEY_LEFT_SHIFT
+	dc.l	Button_Toggle_Pause-Button_Table_Player1,RAWKEY_P|1<<RAWKEY_B_DELAY_RELEASE
+	dc.l	Button_Volume_Down-Button_Table_Player1,RAWKEY_C
+	dc.l	Button_Volume_Up-Button_Table_Player1,RAWKEY_V
+	dc.l	Button_Show_Help-Button_Table_Player1,RAWKEY_HELP
 	dc.l	0
 
 Button_Table_Player2
-	dc.l	JPB_BTN_BLU,RAWKEY_RIGHT_SHIFT
-	dc.l	JPB_BTN_PLAY,RAWKEY_P|1<<RAWKEY_B_DELAY_RELEASE
-	dc.l	JPB_BTN_REVERSE,RAWKEY_C
-	dc.l	JPB_BTN_FORWARD,RAWKEY_V
-	dc.l	JPB_BTN_YEL,RAWKEY_HELP
+	dc.l	Button_Weapon_Select-Button_Table_Player2,RAWKEY_RIGHT_SHIFT
+	dc.l	Button_Toggle_Pause-Button_Table_Player2,RAWKEY_P|1<<RAWKEY_B_DELAY_RELEASE
+	dc.l	Button_Volume_Down-Button_Table_Player2,RAWKEY_C
+	dc.l	Button_Volume_Up-Button_Table_Player2,RAWKEY_V
+	dc.l	Button_Show_Help-Button_Table_Player2,RAWKEY_HELP
 	dc.l	0
 
 Handle_CD32_Buttons
@@ -910,7 +953,10 @@ Release_Delay_Flag	dc.b	0
 
 Handle_CD32_Button_Press
 	movem.l	d0-a6,-(a7)
+	move.l	a0,a6
 .loop	movem.l	(a0)+,d2/d3
+	lea	(a6,d2.l),a1
+	move.l	(a1),d2
 	btst	d2,d0
 	beq.b	.check_next_button
 
@@ -921,8 +967,8 @@ Handle_CD32_Button_Press
 	; button pressed
 	movem.l	d0-a6,-(a7)
 	move.l	d3,d0
-	lea	$1500+$3852.w,a1
-	jsr	$1500+$393c.w
+	lea	$1500+$3792.w,a1
+	jsr	$1500+$387c.w
 	movem.l	(a7)+,d0-a6
 
 .check_next_button
@@ -937,7 +983,10 @@ Handle_CD32_Button_Press
 
 Handle_CD32_Button_Release
 	movem.l	d0-a6,-(a7)
+	move.l	a0,a6
 .loop	movem.l	(a0)+,d2/d3
+	lea	(a6,d2.l),a1
+	move.l	(a1),d2
 	btst	d2,d0
 	bne.b	.button_is_currently_pressed
 	btst	d2,d1
@@ -951,8 +1000,8 @@ Handle_CD32_Button_Release
 	; button released
 	movem.l	d0-a6,-(a7)
 	move.l	d3,d0
-	lea	$1500+$3852.w,a1
-	jsr	$1500+$395c.w
+	lea	$1500+$3792.w,a1
+	jsr	$1500+$389c.w
 	movem.l	(a7)+,d0-a6
 
 .button_is_currently_pressed
