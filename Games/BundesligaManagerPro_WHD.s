@@ -21,6 +21,9 @@
 *** History			***
 ***********************************
 
+; 13-Apr-2022	- support for Italian version added
+;		- support for English version added
+
 ; 07-Sep-2018	- support for V2.0 added, thanks to Irek Kloska for the
 ;		  images
 ;		- this version seems to be unprotected
@@ -67,7 +70,7 @@ BOOTDOS
 ;CBDOSLOADSEG
 ;CBDOSREAD
 CACHE
-DEBUG
+;DEBUG
 ;DISKSONBOOT
 DOSASSIGN
 FONTHEIGHT	= 8
@@ -107,13 +110,13 @@ slv_CurrentDir	IFD	DEBUG
 		ENDC
 		dc.b	"data_200",0
 
-slv_name	dc.b	"Bundesliga Manager Professional",0
+slv_name	dc.b	"Bundesliga Manager Professional/The Manager",0
 slv_copy	dc.b	"1991 Software 2000",0
 slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"Version 1.01 (07.09.2018)",0
+		dc.b	"Version 1.02 (13.04.2022)",0
 slv_config	dc.b	0
 		CNOP	0,4
 
@@ -316,6 +319,8 @@ EXIT	move.l	_resload(pc),a2
 PT_GAME	dc.l	$36ba,$3e3a,$51df,PLGAME-PT_GAME	; v1.0
 	dc.l	$36be,$3e3e,$51df,PLGAME_103-PT_GAME	; v1.03
 	dc.l	$4577,$8126,$f566,PLGAME_200-PT_GAME	: v2.00
+	dc.l	$365a,$36d4,$149c,PLGAME_IT-PT_GAME	; Italian
+	dc.l	$3636,$36b0,$149c,PLGAME_EN-PT_GAME	; English
 	dc.l	-1					; end of tab
 
 PLGAME	PL_START
@@ -362,11 +367,20 @@ PLGAME_200
 	PL_END
 	
 
+PLGAME_IT
+	PL_START
+	PL_PS	$3fc12,SetStack
+	PL_W	$25370,$4e71		; disable protection check
+	PL_END
+	
+PLGAME_EN
+	PL_START
+	PL_PS	$3ed32,SetStack
+	PL_W	$247e2,$4e71		; disable protection check
+	PL_END
+
 SetStack
 	sub.l	#STACKSIZE,d0
 	addq.l	#8,d0
 	rts
-
-
-
 
