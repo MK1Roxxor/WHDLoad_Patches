@@ -21,6 +21,10 @@
 *** History			***
 ***********************************
 
+; 29-May-2022	- level 3 interrupt is now disabled when loading data, this
+;		  fixes the "bad stack pointer on entering WHDLoad" problem
+;		  that occurs on some systems (issue #5660)
+
 ; 26-May-2022	- work started
 ;		- and finished a while later, Bplcon0 color bit fixes (x9),
 ;		  DMA wait in replayer fixed (x4), blitter waits added (x3),
@@ -90,7 +94,7 @@ HEADER	SLAVE_HEADER			; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.1 (26.05.2022)",0
+	dc.b	"Version 1.1A (29.05.2022)",0
 
 	CNOP	0,4
 
@@ -345,9 +349,11 @@ Wait_Raster_Lines
 
 Disk_Load
 	movem.l	d0-a6,-(a7)
+	move.w	#1<<5,$dff09a
 	move.b	Disk_Number(pc),d2
 	move.l	resload(pc),a2
 	jsr	resload_DiskLoad(a2)
+	move.w	#1<<15|1<<5,$dff09a
 	movem.l	(a7)+,d0-a6
 	rts
 
