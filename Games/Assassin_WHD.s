@@ -21,6 +21,11 @@
 *** History			***
 ***********************************
 
+; 13-Dec-2022	- graphics problem in title screen fixed, it was caused
+;		  by a wrong Bplcon0 color bit fix (issue #4183)
+
+; 10-Apr-2022	- jump with fire button 2 added (issue #5303)
+
 ; 19-Jun-2019	- level 4 interrupt fix was wrong (rte vs. rts) and caused
 ;		  the game to crash when collecting a bonus
 
@@ -65,7 +70,7 @@
 
 FLAGS		= WHDLF_NoError|WHDLF_ClearMem
 QUITKEY		= $59		; F10
-DEBUG
+;DEBUG
 
 ; absolute skip
 PL_SA	MACRO
@@ -129,7 +134,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.2a (19.06.2019)",0
+	dc.b	"Version 1.2c (13.12.2022)",0
 
 HighName	dc.b	"Assassin.highs",0
 
@@ -307,7 +312,7 @@ PLGAME_CHIP
 	
 
 PLGAME	PL_START
-	PL_PS	$18cd2,.FixBplcon0
+	PL_PS	$18cd2,.FixBplcon0_1
 	PL_PS	$18cd8,.FixBplcon0
 	PL_P	$18f3c,.FixBplcon0
 	PL_W	$18d36+2,$02
@@ -392,7 +397,23 @@ PLGAME	PL_START
 	PL_P	$1de8a,Decrunch		; relocate ProPack decruncher
 
 	PL_PS	$18a8a,.FixReplay
+
+	PL_PS	$125e,.Enable_Jump_With_Fire2
 	PL_END
+
+
+.Enable_Jump_With_Fire2
+	move.w	d0,d1
+	lsr.w	#1,d1
+	eor.w	d1,d0
+
+	btst	#14-8,$dff016
+	bne.b	.no_Fire_2
+	or.w	#1<<8,d0
+
+.no_Fire_2
+	rts
+
 
 .FixReplay
 	lea	PLREPLAY(pc),a0
@@ -584,8 +605,12 @@ PLGAME	PL_START
 	dc.b	"PRESS FIRE TO RETURN TO GAME",0
 	CNOP	0,2
 
-.FixBplcon0
+.FixBplcon0_1
 	move.b	#$02,$1000+($7c91e-$7c618).w
+	rts
+
+.FixBplcon0
+	move.b	#$02,$1000+($7ca5e-$7c618).w
 	rts
 
 
