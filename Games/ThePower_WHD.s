@@ -21,6 +21,10 @@
 *** History			***
 ***********************************
 
+; 13-Dec-2022	- fixes for the random generator were incorrect and
+;		  caused access faults on 68000 (long read from $bfe801),
+;		  random generator fixes use a different approach now
+
 ; 11-Dec-2022	- highscore loading removed from .Load_Data routine,
 ;		  highscore loading is now handled separately and works
 ;		  if no highscores have been saved yet as well
@@ -126,7 +130,7 @@ HEADER	SLAVE_HEADER			; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.2 (11.12.2022)",10
+	dc.b	"Version 1.2A (13.12.2022)",10
 	dc.b	10
 	dc.b	"In-Game Keys:",10
 	dc.b	"1/2: Toggle Unlimited Time Player 1/2",10
@@ -255,8 +259,9 @@ PL_GAME	PL_START
 	PL_P	$51a8,.Load_Data
 	PL_R	$5174			; disable opening trackdisk.device
 	PL_P	$516c,QUIT		; reset -> quit to DOS
-	PL_L	$53fe+2,$bfe801		; $bfc800 -> $bfe801
-	PL_L	$53e0+2,$bfe801		; $bfc800 -> $bfe801
+	PL_PS	$53fe,.Get_Random_D0
+	PL_PS	$53e0,.Get_Random_D1
+	
 	PL_W	$53d4,$2008		; move.l (a0),d0 -> move.l a0,d0
 	PL_PSS	$55a6,.Fix_Keyboard_Delay,2
 	PL_PS	$55b6,.Check_Quit_Key
@@ -286,6 +291,17 @@ PL_GAME	PL_START
 	PL_PSS	$1fd4,Save_Levels,4
 
 	PL_END
+
+.Get_Random_D0
+	moveq	#0,d0
+	move.b	$bfe801,d0
+	add.l	$dff004,d0
+	rts
+
+.Get_Random_D1
+	move.w	$dff004,d0
+	add.b	$bfe801,d1
+	rts
 
 .Fix_Keyboard_Delay
 	moveq	#3,d0
