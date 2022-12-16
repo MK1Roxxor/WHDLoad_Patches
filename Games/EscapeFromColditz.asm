@@ -15,6 +15,9 @@
 ;		- timing in intro fixed
 ;		- patch list used
 ;		- source cleaned up and optimised
+;		17.12.22 StingRay
+;		- random crashes fixed (issue #4143)
+;		- minor size optimising
 ;  :Requires.	-
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -93,7 +96,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.2 (16.07.2015)",0
+	dc.b	"Version 1.3 (17.12.2022)",0
 
 Name	dc.b	"df1:colditz_demo",0
 	CNOP	0,2
@@ -131,15 +134,15 @@ Patch	lea	resload(pc),a1
 
 .doblits	move.l	#$4e714eb9,d0
 
-		move.w	d0,$3514
+		move.w	d0,$3514.w
 		pea	Blit109(pc)
-		move.l	(sp)+,$3516
+		move.l	(sp)+,$3516.w
 
-		move.w	d0,$420
-		move.w	d0,$434
+		move.w	d0,$420.w
+		move.w	d0,$434.w
 		pea	Blit1601(pc)
-		move.l	(sp),$422
-		move.l	(sp)+,$436
+		move.l	(sp),$422.w
+		move.l	(sp)+,$436.w
 
 
 
@@ -171,26 +174,26 @@ Patch	lea	resload(pc),a1
 
 
 		move.l	#$4eb80080,d0		; jsr $80.w
-		move.l	d0,$7a40
+		move.l	d0,$7a40.w
 
 		addq.l	#6,d0			; jsr $86.w
-		move.l	d0,$3624
-		move.l	d0,$3640
-		move.l	d0,$5b2
+		move.l	d0,$3624.w
+		move.l	d0,$3640.w
+		move.l	d0,$5b2.w
 
 		addq.l	#6,d0			; jsr $8c.w
-		move.l	d0,$192
+		move.l	d0,$192.w
 
 		addq.l	#6,d0			; jsr $92.w
-		move.l	d0,$758a
+		move.l	d0,$758a.w
 
 		addq.l	#6,d0			; jsr $98.w
-		move.l	d0,$760a
-		move.l	d0,$7620
-		move.l	d0,$604
+		move.l	d0,$760a.w
+		move.l	d0,$7620.w
+		move.l	d0,$604.w
 
 		addq.l	#6,d0			; jsr $9e.w
-		move.l	d0,$628
+		move.l	d0,$628.w
 
 
 .noblit
@@ -200,6 +203,11 @@ Patch	lea	resload(pc),a1
 	move.l	a5,a1
 	jsr	resload_Patch(a2)
 
+
+	; V1.3, 17.12.2022
+	; Game needs to run in user mode, otherwise crashes when
+	; certain keys (F5 for example) are pressed can occur
+	move.w	#0,sr
 	jmp	$1b18(a5)
 
 
