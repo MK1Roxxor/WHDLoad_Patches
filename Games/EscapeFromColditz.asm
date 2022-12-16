@@ -18,6 +18,8 @@
 ;		17.12.22 StingRay
 ;		- random crashes fixed (issue #4143)
 ;		- minor size optimising
+;		- debugkey handling removed from keyboard interrupt
+;		- NTSC compatible rasterwait
 ;  :Requires.	-
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -381,19 +383,8 @@ SetLev2IRQ
 	or.b	#1<<6,$e00(a1)			; set output mode
 
 
-
-	cmp.b	HEADER+ws_keydebug(pc),d0	
-	bne.b	.nodebug
-	movem.l	(a7)+,d0-d1/a0-a2
-	move.w	(a7),6(a7)			; sr
-	move.l	2(a7),(a7)			; pc
-	clr.w	4(a7)				; ext.l sr
-	bra.b	.debug
-
-
-.nodebug
 	cmp.b	HEADER+ws_keyexit(pc),d0
-	beq.b	.exit
+	beq.b	QUIT
 	
 
 .nokeys	moveq	#3-1,d1
@@ -409,10 +400,6 @@ SetLev2IRQ
 	movem.l	(a7)+,d0-d1/a0-a2
 	rte
 
-.debug	pea	(TDREASON_DEBUG).w
-	bra.w	EXIT
-
-.exit	bra.w	QUIT
 
 
 Key	dc.b	0
@@ -427,20 +414,14 @@ EXIT	move.l	resload(pc),a2
 
 
 KillSys	move.w	#$7fff,$dff09a
-	bsr	WaitRaster
+	bsr.b	WaitRaster
 	move.w	#$7ff,$dff096
 	move.w	#$7fff,$dff09c
 	rts
 
 WaitRaster
-	move.l	d0,-(a7)
-.wait	move.l	$dff004,d0
-	and.l	#$1ff00,d0
-	cmp.l	#303<<8,d0
-	bne.b	.wait
-.wait2	move.l	$dff004,d0
-	and.l	#$1ff00,d0
-	cmp.l	#303<<8,d0
-	beq.b	.wait2
-	move.l	(a7)+,d0
+.wait1	btst	#0,$dff005
+	beq.b	.wait1
+.wait2	btst	#0,$dff005
+	bne.b	.wait2
 	rts
