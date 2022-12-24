@@ -1207,7 +1207,7 @@ PL_LEVEL5
 
 PL_ENDSEQUENCE_LOAD
 	PL_START
-	PL_S	$5e,6			; dom't load "diskchange" file
+	PL_S	$5e,6			; don't load "diskchange" file
 	PL_S	$6c,6			; don't run "diskchange" code
 	PL_SA	$fa,$17a
 	PL_SA	$17e,$1c6
