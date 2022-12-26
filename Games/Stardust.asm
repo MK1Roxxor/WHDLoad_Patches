@@ -40,6 +40,9 @@
 ;			   - graphics glitch fixed (copperlist 2 now used
 ;			     instead of copperlist 1 when applying the
 ;			     Bplcon0 color bit fixes)
+;		26.12.2022 - data directory always set to data now, no
+;			     special case directory for debugging purposes
+;			      anymore
 ;
 ;  :Requires.	-
 ;  :Copyright.	Public Domain
@@ -96,8 +99,7 @@ HEADER		SLAVE_HEADER		;ws_Security + ws_ID
 	DOSCMD	"WDate  >T:date"
 	ENDC
 
-_dir		dc.b	"code:sources_wrk/whd_slaves/stardust/"
-		dc.b	"data",0
+_dir		dc.b	"data",0
 _name		dc.b	"Stardust",0
 _copy		dc.b	"1993 Bloodhouse",0
 _info		dc.b	"installed & fixed by Mr.Larmer/Bored Seal/Wepl/StingRay",10
