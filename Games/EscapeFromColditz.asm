@@ -20,6 +20,8 @@
 ;		- minor size optimising
 ;		- debugkey handling removed from keyboard interrupt
 ;		- NTSC compatible rasterwait
+;		26.12.22 StingRay
+;		- memory size reduced to 512k, access fault fixed
 ;  :Requires.	-
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -63,7 +65,7 @@ PL_PSA	MACRO
 HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	dc.w	17		; ws_version
 	dc.w	FLAGS		; flags
-	dc.l	$86000		; ws_BaseMemSize
+	dc.l	$80000		; ws_BaseMemSize
 	dc.l	0		; ws_ExecInstall
 	dc.w	Patch-HEADER	; ws_GameLoader
 	dc.w	.dir-HEADER	; ws_CurrentDir
@@ -98,7 +100,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.3 (17.12.2022)",0
+	dc.b	"Version 1.4 (26.12.2022)",0
 
 Name	dc.b	"df1:colditz_demo",0
 	CNOP	0,2
@@ -281,7 +283,19 @@ PLMAIN	PL_START
 	PL_L	$2e80+2,50*13		; adapt counter value, show each screen
 					; for 13 seconds
 
+	PL_PS	$30e0,.Fix_Access
 	PL_END
+
+.Fix_Access
+	bsr.b	.Get_Base
+	add.w	d0,a0
+	cmp.l	#$80000,a0
+	bcs.b	.ok
+	moveq	#0,d0
+.ok
+.Get_Base
+	lea	$7f482,a0
+	rts
 
 
 .fixtiming
