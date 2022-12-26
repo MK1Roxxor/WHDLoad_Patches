@@ -35,6 +35,12 @@
 ;			   - blitter wait added
 ;			   - support for fire 2 added
 ;			   - better 68000 quitkey support
+;		26.12.2022 - crash when trying to quit after tunnel sequence
+;			     fixed (game trashed the level 2 interrupt code)
+;			   - graphics glitch fixed (copperlist 2 now used
+;			     instead of copperlist 1 when applying the
+;			     Bplcon0 color bit fixes)
+;
 ;  :Requires.	-
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -90,15 +96,16 @@ HEADER		SLAVE_HEADER		;ws_Security + ws_ID
 	DOSCMD	"WDate  >T:date"
 	ENDC
 
-_dir		dc.b	"data",0
+_dir		dc.b	"code:sources_wrk/whd_slaves/stardust/"
+		dc.b	"data",0
 _name		dc.b	"Stardust",0
 _copy		dc.b	"1993 Bloodhouse",0
 _info		dc.b	"installed & fixed by Mr.Larmer/Bored Seal/Wepl/StingRay",10
-		dc.b	"V1.5 "
+		dc.b	"V1.6 "
 	IFD BARFLY
 		INCBIN	"T:date"
 	ELSE
-		dc.b	"(12.11.2017)"
+		dc.b	"(26.12.2022)"
 	ENDC
 		dc.b	0
 
@@ -407,12 +414,20 @@ PLGAME	PL_START
 	PL_END
 
 .checkquit3
+
+	; 26.12.2022: Game installs a level 2 interrupt when the tunnel
+	; sequence starts. The level 2 interrupt vector is not cleared when
+	; the tunnel sequence ends, the code it points to will be trashed
+	; though. This leads to crashes when trying to quit with F10.
+	cmp.l	#$c24,$68.w
+	bne.b	.ok
+	bsr	SetLev2IRQ
+.ok
 	move.w	$dff01c,d0
 	or.w	#1<<15|1<<3,d0			; enable level 2 interrupt
 	move.w	d0,$dff09a
 
 	bsr.b	.checkquit2
-	
 
 	move.l	$dff004,d0			; original code
 	rts
@@ -448,7 +463,7 @@ PLGAME	PL_START
 .fixcop	lea	$400.w,a0
 	or.w	#1<<9,$4+2(a0)
 	or.w	#1<<9,$e0+2(a0)
-	move.l	a0,$dff080
+	move.l	a0,$dff084
 	rts
 
 .checkjoy
