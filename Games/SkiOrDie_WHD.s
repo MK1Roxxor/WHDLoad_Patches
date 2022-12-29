@@ -22,6 +22,7 @@
 ***********************************
 
 ; 29-Dec-2022	- unused code removed
+;		- fire button 2 for "Snowball Blast" event added
 
 ; 28-Dec-2022	- work started
 ;		- protection completely skipped, highscore saving supported, 
@@ -78,7 +79,8 @@ HEADER	SLAVE_HEADER			; ws_security + ws_ID
 	dc.w	.config-HEADER		; ws_config
 
 
-.config	dc.b	0
+.config	dc.b	"C1:B:Enable Fire 2 Support (Snowball Blast Event)"
+	dc.b	0
 
 .dir	IFD	DEBUG
 	dc.b	"SOURCES:WHD_Slaves/Games/SkiOrDie/"
@@ -149,6 +151,12 @@ PL_GAME	PL_START
 	PL_B	$1421c,$01		; set protection flag
 	PL_B	$1421d,$01		; set protection flag 2
 	PL_R	$e4d8			; disable drive init
+
+	PL_IFC1
+	PL_PS	$a,.Initialise_Fire2_Reading
+	PL_PS	$6c0e,.Set_Direction_Snowball_Blast
+	PL_PS	$7246,.Get_Joystick_State
+	PL_ENDIF
 	PL_END
 
 .Check_Quit_Key
@@ -202,6 +210,59 @@ PL_GAME	PL_START
 	move.b	d0,FN_NUMBER+1(a0)
 	rts
 		
+
+; Set direction in "Snowball Blast" event with fire 2
+.Set_Direction_Snowball_Blast
+	clr.b	$3100+$18887	; original code
+	btst	#14-8,$dff016
+	bne.b	.Fire2_Not_Pressed
+	moveq	#0,d0
+	move.b	.Joystick_State(pc),d0
+	lea	$3100+$14e73,a0	; key code
+
+	moveq	#.Key_Crsr_Up,d1
+	cmp.b	#.Joy_Up,d0
+	beq.b	.Set_Key
+	moveq	#.Key_Crsr_Down,d1
+	cmp.b	#.Joy_Down,d0
+	beq.b	.Set_Key
+	moveq	#.Key_Crsr_Left,d1
+	cmp.b	#6,d0	;.Joy_Left,d0
+	beq.b	.Set_Key
+	moveq	#.Key_Crsr_Right,d1
+	cmp.b	#.Joy_Right,d0
+	bne.b	.No_Joystick_Direction
+
+.Set_Key
+	move.b	d1,(a0)
+
+.No_Joystick_Direction
+.Fire2_Not_Pressed
+	rts
+
+.Joy_Left	= 1<<1+1<<2
+.Joy_Down	= 1<<2
+.Joy_Up		= 1<<3
+.Joy_Right	= 1<<1
+.Key_Crsr_Up	= $67
+.Key_Crsr_Down	= $65
+.Key_Crsr_Left	= $61
+.Key_Crsr_Right	= $63
+
+
+.Initialise_Fire2_Reading
+	lea	$dff000,a6	; original code
+	move.w	#$cc00,$34(a6)	; set POTGO port bits
+	rts
+
+.Get_Joystick_State
+	jsr	$3100+$39e8
+	lea	.Joystick_State(pc),a0
+	move.b	d0,(a0)
+	rts
+
+.Joystick_State		dc.b	0
+			dc.b	0
 
 
 ; ---------------------------------------------------------------------------
