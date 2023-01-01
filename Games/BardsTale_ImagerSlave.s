@@ -21,6 +21,9 @@
 ** History			***
 ***********************************
 
+; 01-Jan-2023	- fixed file saving for directories, more than 1 entry
+;		  with the same hash is now handled, file "bards_data/icon3"
+;		  is now saved (issue #5970)
 
 ; 06-Dec-2015	- work started, adapted from my generic Amiga DOS imager
 
@@ -38,9 +41,9 @@
 
 
 	dc.b	"$VER: "
-.text	dc.b	"Bard's Tale imager V1.0",10
+.text	dc.b	"Bard's Tale imager V1.1",10
 	dc.b	"by StingRay/[S]carab^Scoopex "
-	dc.b	"(06.12.2015)",0
+	dc.b	"(01.01.2023)",0
 	CNOP	0,4
 
 
@@ -228,7 +231,7 @@ SaveDirFiles
 	move.l	a0,d1
 	jsr	-120(a6)	; CreateDir()
 .lockok	move.l	d0,DIRLOCK(a7)
-	beq.b	.direrror
+	beq.w	.direrror
 
 	move.l	d0,d1
 	jsr	-126(a6)	; CurrentDir()
@@ -245,6 +248,8 @@ SaveDirFiles
 
 .load_loop
 	bsr	LoadBlock	; a3: block
+	move.l	rbl_next_hash(a3),d5
+	
 
 	lea	512-80(a3),a0	; sector name (1. byte: length of name)
 	move.b	(a0)+,d0	; length of file name
@@ -276,7 +281,9 @@ SaveDirFiles
 	bne.b	.error
 
 
-.next	dbf	d6,.do_all
+.next	move.l	d5,d0		; more entries with the same hash value?
+	bne.b	.load_loop
+	dbf	d6,.do_all
 
 
 
