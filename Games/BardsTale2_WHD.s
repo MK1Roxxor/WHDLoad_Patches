@@ -21,7 +21,9 @@
 *** History			***
 ***********************************
 
-; 29-Dec-2013	- to avoid problems the orgiginal Bard's Tale character
+; 04-Jan-2023	- DMA wait in replayer fixed (issue #5989)
+
+; 29-Dec-2013	- to avoid problems the original Bard's Tale character
 ;		  data will be copied to its own directory instead of
 ;		  using the members directory
 
@@ -101,7 +103,7 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"Debug!!! "
 		ENDC
-		dc.b	"Version 1.00 (29.12.2013)",0
+		dc.b	"Version 1.01 (04.01.2023)",0
 name		dc.b	"bard",0
 chardisk_name	dc.b	"destiny knight character disk",0
 chardisk_dir	dc.b	"members",0
@@ -198,9 +200,26 @@ EXIT	move.l	_resload(pc),a2
 
 ; SPS 0046
 PL0046	PL_START
+	PL_PS	$38b02,Fix_DMA_Wait
 
 	PL_END
 
+
+
+Fix_DMA_Wait
+	moveq	#5-1,d0
+
+; d0.w: number of raster lines to wait
+Wait_Raster_Lines
+	move.w	d1,-(a7)
+.loop	move.b	$dff006,d1
+.still_in_same_raster_line
+	cmp.b	$dff006,d1
+	beq.b	.still_in_same_raster_line	
+	subq.w	#1,d0
+	bne.b	.loop
+	move.w	(a7)+,d1
+	rts
 
 
 TAGLIST	dc.l	WHDLTAG_ATTNFLAGS_GET
