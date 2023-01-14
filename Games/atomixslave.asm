@@ -17,13 +17,39 @@
 ;		  make the logo move)
 ;		- byte writes to volume register fixed
 ;		- interrupts fixed
+;		12.01.2023 StingRay:
+;		- unlimited time trainer added
+;		- WHDLoad v17+ features used
+;		14.01.2023 StingRay:
+;		- level skip added
+;		- typo in "congratulation" text fixed
+;		- level selector added
+;		- in-game keys added
+;		- highscore saving disabled if trainer options are used
 ;
 ;  :Requires.	whdload-package :)
 ;  :Copyright.	Freeware
 ;  :Language.	68000 Assembler
 ;  :Translator.	ASM-One 1.25, Barfly 2.9, ASM-Pro 1.16d
-;  :To Do.
+;  :To Do.	highscore file should be shortened, currently a whole track
+;		is saved (6300 bytes), actual highscore data is much shorter
+;		
 ;---------------------------------------------------------------------------*
+
+; absolute skip
+PL_SA	MACRO
+	PL_S	\1,\2-(\1)
+	ENDM
+
+; jsr+absolute skip
+PL_PSA	MACRO
+	PL_PS	\1,\2		; could use PSS here but it fills memory
+	PL_S	\1+6,\3-(\1+6)	; with NOPS so we use standard skip
+	ENDM
+
+; Trainer options
+TRB_UNLIMITED_TIME	= 0
+TRB_IN_GAME_KEYS	= 1
 
 	IFD	BARFLY
 	INCDIR	Includes:
@@ -46,7 +72,7 @@
 
 slbase
 .base		SLAVE_HEADER		;ws_Security + ws_ID
-		dc.w	13		;ws_Version
+		dc.w	17		;ws_Version
 		dc.w	WHDLF_Disk!WHDLF_NoError!WHDLF_EmulTrap	;ws_flags
 		dc.l	$80000		;ws_BaseMemSize			;$bc000
 		dc.l	$00		;ws_ExecInstall
@@ -60,16 +86,37 @@ _expmem		dc.l	0		;ws_ExpMem
 		dc.w	_copy-slbase	;ws_copy
 		dc.w	_info-slbase	;ws_info
 
+; v16
+	dc.w	0			; ws_kickname
+	dc.l	0			; ws_kicksize
+	dc.w	0			; ws_kickcrc
+
+; v17
+	dc.w	.config-slbase		; ws_config
+
+
+.config	dc.b 	"C1:X:Unlimited Time:",TRB_UNLIMITED_TIME+"0",";"
+	dc.b	"C1:X:In-Game Keys:",TRB_IN_GAME_KEYS+"0",";"
+	dc.b	"C2:L:Start at Level:Off,1,2,3,4,5,6,7,8,9,10,"
+	dc.b	"11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30"
+	dc.b	0
+
+
+
 _name		dc.b	"Atomix",0
 _copy		dc.b	"1990 Tale/Thalion",0
 _info		dc.b	"installed & fixed by Harry and Wepl and StingRay",10
-		dc.b	"V1.3 (13-Aug-2018)",0
+		dc.b	"V1.4 (14-Jan-2023)",10
+		dc.b	10
+		dc.b	"In-Game Keys:",10
+		dc.b	"T: Refresh Time C: Toggle Unlimited Time",10
+		dc.b	"N: Skip Level",0
 		even
 
 ;======================================================================
 
 ;	DOSCMD	"WDate >T:date"
-		dc.b	"$VER: Atomix_Slave_1.3"
+		dc.b	"$VER: Atomix_Slave_1.4"
 ;	INCBIN	"T:date"
 		dc.b	0
 		even
@@ -145,14 +192,39 @@ PLINTRO	PL_START
 
 
 
+TAGLIST	dc.l	WHDLTAG_CUSTOM1_GET
+TRAINER	dc.l	0
+	dc.l	WHDLTAG_CUSTOM2_GET
+LEVEL	dc.l	0
+	dc.l	TAG_DONE
+
+MAX_LEVEL	= 30
+RAWKEY_N	= $36
+RAWKEY_T	= $14
+RAWKEY_C	= $33
+
+
 PATCHGAME
 	MOVE.L	#$4E714EB9,$4E7A.W
 	PEA	KEYHP(PC)
 	MOVE.L	(A7)+,$4E7E.W
 
+	lea	TAGLIST(pc),a0
+	move.l	_resload(pc),a2
+	jsr	resload_Control(a2)
+
+
 	lea	PLGAME(pc),a0
 	lea	$3000.w,a1
-	move.l	_resload(pc),a2
+
+	move.l	LEVEL(pc),d0
+	beq.b	.no_level_set
+	cmp.l	#MAX_LEVEL,d0
+	bhi.b	.invalid_level
+	move.l	d0,$38+2(a1)
+.invalid_level
+.no_level_set
+
 	jsr	resload_Patch(a2)
 
 	JSR	$3000.W
@@ -163,7 +235,71 @@ PLGAME	PL_START
 	PL_ORW	$20a8+2,1<<9		; set Bplcon0 color bit
 	PL_ORW	$21c4+2,1<<9		; set Bplcon0 color bit
 	PL_P	$a0a,AckVBI
+
+	PL_IFC1X	TRB_UNLIMITED_TIME
+	PL_B	$9f6,$4a
+	PL_ENDIF
+
+
+	PL_IFC1X	TRB_IN_GAME_KEYS
+	PL_PSS	$18a,.Check_Keys,2
+	PL_ENDIF
+
+	; Fix typo in "Congratulation" text
+	PL_DATA	$249e,.Congratulations_Text_Length
+.Congratulations_Text
+	dc.b	"congratulation",0
+	CNOP	0,2
+.Congratulations_Text_Length = *-.Congratulations_Text
+
+
 	PL_END
+
+
+.Check_Keys
+	moveq	#0,d0
+	jsr	$3000+$1e4e.w		; returns raw key code in d0
+
+	movem.l	d0,-(a7)
+	lea	In_Game_Keys_Table(pc),a0
+	bsr	Handle_Keys
+	movem.l	(a7)+,d0
+
+	cmp.b	#$ff,d0
+	rts
+
+
+In_Game_Keys_Table
+	dc.w	RAWKEY_N,.Skip_Level-In_Game_Keys_Table
+	dc.w	RAWKEY_T,.Refresh_Time-In_Game_Keys_Table
+	dc.w	RAWKEY_C,.Toggle_Unlimited_Time-In_Game_Keys_Table
+	dc.w	0
+
+.Skip_Level
+	move.l	$3000+$231e.w,a0
+	addq.w	#1,a0
+	move.l	a0,a2
+	moveq	#0,d4
+	jsr	$3000+$86a.w		; get offset value
+	addq.w	#1,d4	
+	move.b	#-1,(a0,d4.w)		; set "level complete" flag
+
+	st	$3000+$2356.w
+	rts	
+
+.Refresh_Time
+	move.l	$3000+$2302.w,d0	; level number
+	subq.w	#1,d0
+	lsl.w	#2,d0
+	lea	$3000+$1a12a,a0		; level times
+	move.l	(a0,d0.w),$3000+$22fe.w
+	rts	
+
+
+.Toggle_Unlimited_Time
+	eor.b	#$19,$3000+$9f6.w	; subq.l #1,Time <-> tst.l Time
+	rts
+
 
 PATCHHI
 	MOVE.L	#$4E714EB9,$33E6.W
@@ -366,12 +502,19 @@ LOADROUT
 
 
 .WRITE
+
+	move.l	TRAINER(pc),d0
+	add.l	LEVEL(pc),d0
+	bne.b	.no_highscore_save
+
 	MOVE.L	#$189c,d0
 
 	MOVE.L	A0,A1
 	move.l	(_resload,PC),a3
 	lea	(HIGHNAME,PC),a0	;filename
 	jsr	(resload_SaveFile,a3)
+
+.no_highscore_save
 	MOVEM.L	(A7)+,D0-A6
 	RTS
 
@@ -405,3 +548,24 @@ QUIT	pea	(TDREASON_OK).w
 	addq.l	#resload_Abort,(a7)
 	rts
 
+; a0.l: table with keys and corresponding routines to call
+; d0.w: raw key code
+
+Handle_Keys
+	move.l	a0,a1
+.check_all_key_entries
+	movem.w	(a0)+,d1/d2
+	cmp.w	d0,d1
+	beq.b	.key_entry_found
+	tst.w	(a0)
+	bne.b	.check_all_key_entries
+	rts	
+	
+.key_entry_found
+	pea	Flush_Cache(pc)
+	jmp	(a1,d2.w)
+
+Flush_Cache
+	move.l	_resload(pc),-(a7)
+	add.l	#resload_FlushCache,(a7)
+	rts
