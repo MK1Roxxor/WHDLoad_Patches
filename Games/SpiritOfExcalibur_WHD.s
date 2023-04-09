@@ -21,6 +21,11 @@
 *** History			***
 ***********************************
 
+; 09-Apr-2023	- the skipped Allocate/Release patches (V1.01) caused the
+;		  title music not to be played, patches have now been
+;		  enabled again and a cache flush has been added
+;		  (Mantis issue #5707)
+
 ; 26-Sep-2018	- Allocate/Release patches disabled, fixes access fault
 ;		  reported in Mantis issue #3965
 
@@ -68,7 +73,7 @@ BOOTDOS
 ;CBDOSLOADSEG
 ;CBDOSREAD
 CACHE
-DEBUG
+;DEBUG
 ;DISKSONBOOT
 ;DOSASSIGN
 FONTHEIGHT	= 8
@@ -114,7 +119,7 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"Version 1.01 (26.09.2018)",0
+		dc.b	"Version 1.02 (09.04.2023)",0
 slv_config	dc.b	"C1:B:Skip Intro"
 		dc.b	0
 		CNOP	0,4
@@ -354,8 +359,8 @@ PLINTRO_1586
 	PL_P	$c914,Examine
 	PL_P	$c922,ExNext
 
-; V1.01
-	PL_SA	$6f20,$6f44		; skip Allocate/Release patches
+	; V1.02
+	PL_PSS	$6f3c,Patch_Memory_Release_And_Flush,2
 	PL_END
 
 
@@ -368,8 +373,8 @@ PLGAME_1586
 	PL_P	$2b48c,Examine
 	PL_P	$2b49a,ExNext
 
-; V1.01
-	PL_SA	$25e86,$25eaa		; skip Allocate/Release patches
+	; V1.02
+	PL_PSS	$25ea2,Patch_Memory_Release_And_Flush,2
 	PL_END
 
 
@@ -381,8 +386,9 @@ PLINTRO_2852
 	PL_P	$be48,Examine
 	PL_P	$be56,ExNext
 
-; V1.01
-	PL_SA	$6b3a,$6b5e		; skip Allocate/Release patches
+	
+	; V1.02
+	PL_PSS	$6b56,Patch_Memory_Release_And_Flush,2
 	PL_END
 
 
@@ -395,8 +401,8 @@ PLGAME_2852
 	PL_P	$2b3be,Examine
 	PL_P	$2b3cc,ExNext
 
-; V1.01
-	PL_SA	$25d52,$25d76		; skip Allocate/Release patches
+	; V1.02
+	PL_PSS	$25d6e,Patch_Memory_Release_And_Flush,2
 	PL_END
 
 FixRMB	move.w	#$c00,$dff034
@@ -414,10 +420,18 @@ Examine	lea	.file(pc),a0
 .file	dc.b	0,0			; -> current dir
 
 
-
-
-
 SetStack
 	sub.l	#STACKSIZE,d0
 	addq.l	#8,d0
 	rts
+
+
+; a0.l: pointer to _AllocA4 routine
+Patch_Memory_Release_And_Flush
+	add.w	#$2580c-$257e2,a0	; a0: pointer to _ReleaseA4 routine
+	move.l	a4,2(a0)
+	move.l	_resload(pc),-(a7)
+	add.l	#resload_FlushCache,(a7)
+	rts
+
+
