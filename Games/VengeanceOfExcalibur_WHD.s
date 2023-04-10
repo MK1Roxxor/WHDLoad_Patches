@@ -21,7 +21,15 @@
 *** History			***
 ***********************************
 
-; 26-Sep-2017	- access fault caused by using SMC for the Alloc/Release
+; 10-Apr-2023	- the skipped Allocate/Release patches (V1.01) caused the
+;		  music not to be played, patches have now been
+;		  enabled again and a cache flush has been added
+;		  (Mantis issue #5009)
+;		- ExNext/Examine patches removed for German and French
+;		  versions too, using the same approach to fix the file
+;		  loading problem as for the English version now
+
+; 26-Sep-2018	- access fault caused by using SMC for the Alloc/Release
 ;		  patches fixed (issue #3964)
 
 ; 20-Sep-2018	- different patch approach for fixing the "files not loaded"
@@ -36,7 +44,6 @@
 	INCDIR	SOURCES:Include/
 	INCLUDE	whdload.i
 	INCLUDE	whdmacros.i
-	;INCLUDE	lvo/dos.i
 
 
 ; absolute skip
@@ -67,7 +74,7 @@ BOOTDOS
 ;CBDOSLOADSEG
 ;CBDOSREAD
 CACHE
-DEBUG
+;DEBUG
 ;DISKSONBOOT
 ;DOSASSIGN
 FONTHEIGHT	= 8
@@ -91,7 +98,7 @@ STACKSIZE	= 30000
 ;============================================================================
 
 slv_Version	= 17
-slv_Flags	= WHDLF_NoError|WHDLF_Examine|WHDLF_EmulTrap
+slv_Flags	= WHDLF_NoError|WHDLF_Examine|WHDLF_ClearMem
 slv_keyexit	= $59	; F10
 
 
@@ -113,7 +120,7 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"Version 1.01 (26.09.2018)",0
+		dc.b	"Version 1.02 (10.04.2023)",0
 slv_config	dc.b	"C1:B:Skip Intro"
 		dc.b	0
 		CNOP	0,4
@@ -344,44 +351,45 @@ PT_GAME	dc.l	$130f,$1384,$240e,PLINTRO-PT_GAME
 	dc.l	-1					; end of tab
 
 
+
+; --------------------------------------------------------------------------
+; Intro is the same for all supported game versions
+
 PLINTRO
 	PL_START
 	PL_PS	$ce80,SetStack
 	PL_PSS	$54a2,FixRMB,2
 
 	PL_B	$76f2,$60
-	PL_SA	$719a,$71e2
+	PL_SA	$719a,$71e2		; skip CurrentDir stuff etc.
 
-	PL_SA	$6f00,$6f24		; skip Alloc/Release patches
+	; V1.02
+	PL_PSS	$6f1c,Patch_Memory_Release_And_Flush,2
 	PL_END
 
+
+; --------------------------------------------------------------------------
+; English version, SPS 2499
 
 PLGAME	PL_START
 	PL_PS	$31c70,SetStack
 	PL_B	$36778,1		; set fCopyProtectPassed
 	PL_PSS	$29f52,FixRMB,2
 
-	;PL_P	$32c1a,.Examine
-	;PL_P	$32c28,ExNext
 	PL_W	$2ba5c,$4e71		; force HD mode
 
 
-	PL_SA	$2bc4a,$2bc92
+	PL_SA	$2bc4a,$2bc92		; skip CurrentDir stuff etc.
 	PL_B	$2c1a2,$60
 
-	PL_SA	$2b9b0,$2b9d4		; skip Alloc/Release patches
 
+	; V1.02
+	PL_PSS	$2b9cc,Patch_Memory_Release_And_Flush,2
 	PL_END
 
-.Examine
-	move.w	#$0f0,$dff180
-	btst	#6,$bfe001
-	bne.b	.Examine
 
-	move.l	DOSbase(pc),a6
-	jsr	_LVOExamine(a6)
-	rts
-
+; --------------------------------------------------------------------------
+; German version
 
 PLGAME_GER
 	PL_START
@@ -389,13 +397,19 @@ PLGAME_GER
 	PL_B	$36fbc,1		; set fCopyProtectPassed
 	PL_PSS	$2a796,FixRMB,2
 	
-	PL_P	$3345e,Examine
-	PL_P	$3346c,ExNext
 	PL_W	$2c2a0,$4e71		; force HD mode
 
-	PL_SA	$2c1f4,$2c218		; skip Alloc/Release patches
+	PL_SA	$2c48e,$2c4d6		; skip CurrentDir stuff etc.
+	PL_B	$2c9e6,$60
+	
+
+	; V1.02
+	PL_PSS	$2c210,Patch_Memory_Release_And_Flush,2
 	PL_END
 
+
+; --------------------------------------------------------------------------
+; French version
 
 PLGAME_FR
 	PL_START
@@ -403,11 +417,13 @@ PLGAME_FR
 	PL_B	$36d68,1		; set fCopyProtectPassed
 	PL_PSS	$2a55e,FixRMB,2
 	
-	PL_P	$33226,Examine
-	PL_P	$33234,ExNext
 	PL_W	$2c068,$4e71		; force HD mode
 
-	PL_SA	$2bfbc,$2bfe0		; skip Alloc/Release patches
+	PL_SA	$2c256,$2c29e		; skip CurrentDir stuff etc.
+	PL_B	$2c7ae,$60
+
+	; V1.02
+	PL_PSS	$2bfd8,Patch_Memory_Release_And_Flush,2
 	PL_END
 
 
@@ -415,22 +431,18 @@ PLGAME_FR
 FixRMB	move.w	#$c00,$dff034
 	rts
 
-ExNext	move.l	d2,a0
-	move.l	_resload(pc),a6
-	jmp	resload_ExNext(a6)
-
-Examine	lea	.file(pc),a0
-	move.l	d2,a1
-	move.l	_resload(pc),a6
-	jmp	resload_Examine(a6)
-
-.file	dc.b	0,0			; -> current dir
-
-
 
 
 
 SetStack
 	sub.l	#STACKSIZE,d0
 	addq.l	#8,d0
+	rts
+
+; a0.l: pointer to _AllocA4 routine
+Patch_Memory_Release_And_Flush
+	add.w	#$2580c-$257e2,a0	; a0: pointer to _ReleaseA4 routine
+	move.l	a4,2(a0)
+	move.l	_resload(pc),-(a7)
+	add.l	#resload_FlushCache,(a7)
 	rts
