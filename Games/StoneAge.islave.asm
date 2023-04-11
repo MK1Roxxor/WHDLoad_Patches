@@ -1,3 +1,5 @@
+; 10.04.2023: V1.1, StingRay
+; - Track 0 handling adapted for newer RawDIC versions
 
 	; Stone Age imager
 
@@ -27,7 +29,7 @@
 
 	; Similar formats: Thalion games (uses the same CRC16 method)
 
-		incdir	Includes:
+		incdir	SOURCES:Include/
 		include	RawDIC.i
 
 		SLAVE_HEADER
@@ -37,7 +39,8 @@
 		dc.l	Text	; Pointer to the text displayed in the imager window
 
 		dc.b	"$VER: "
-Text:		dc.b	"Stone Age imager V1.0",10,"by Mr.Larmer/Wanted Team on 06.10.1999",0
+Text:		dc.b	"Stone Age imager V1.1 (10.04.2023)",10
+		dc.b	"by Mr.Larmer/Wanted Team and StingRay",0
 		cnop	0,4
 
 DSK_1:		dc.l	0		; Pointer to next disk structure
@@ -52,12 +55,18 @@ DSK_1:		dc.l	0		; Pointer to next disk structure
 		dc.l	0		; Called after a disk has been read
 
 TL_1:
-		TLENTRY 0,0,$1400,SYNC_STD,DMFM_STD
+		TLENTRY 0,0,$1400,SYNC_STD,Decode_Track0
 		TLENTRY 1,1,$1400,SYNC_STD,DMFM_SA
 		TLENTRY 2,2,$1400,SYNC_STD,DMFM_SA_1
 		TLENTRY 3,159,$1400,SYNC_STD,DMFM_SA
 
 		TLEND
+
+Decode_Track0
+	moveq	#10,d0			; number of sectors
+	jsr	rawdic_DMFM_STANDARD(a5)
+	moveq	#IERR_OK,d0
+	rts
 
 DMFM_SA:
 		lea	SectorFlags(pc),a2
