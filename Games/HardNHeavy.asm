@@ -22,10 +22,13 @@
 ; 17.07.2016
 ; - 68000 quitkey only worked when in-game keys were enabled, fixed
 
+; 13.04.2023
+; - jump with fire 2 added (CUSTOM3), issue #6042
+
 	INCDIR	SOURCES:INCLUDE/
 	INCLUDE	whdload.i
 
-DEBUG
+;DEBUG
 QUITKEY	= $59			; F10
 
 HEADER	SLAVE_HEADER
@@ -56,6 +59,7 @@ HEADER	SLAVE_HEADER
 	dc.w	.config-HEADER	; ws_config
 
 .config	dc.b	"BW;"
+	dc.b	"C3:B:Jump with Fire 2;"
 	dc.b	"C1:X:Unlimited Lives:0;"
 	dc.b	"C1:X:Unlimited Time:1;"
 	dc.b	"C1:X:Invincibility:2;"
@@ -75,7 +79,7 @@ HEADER	SLAVE_HEADER
 
 .name		DC.B	"Hard'n'Heavy",0
 .copy		DC.B	'1989 Reline',0
-.info		DC.B	'V1.02 by Harry & StingRay (17.07.2016)',0
+.info		DC.B	'V1.03 by Harry & StingRay (13.04.2023)',0
 HighName	dc.b	'hnhhigh',0
 	CNOP	0,4
 
@@ -223,7 +227,27 @@ PLGAME	PL_START
 
 	PL_PSS	$8396,Delay,2
 	PL_L	$910,$4EB804BC	; jsr $4bc.w -> jsr CheckKey
+
+	PL_IFC3
+	PL_PSS	$0,.Initialise_POTGO,2
+	PL_PS	$5c02,.Read_Joystick
+	PL_ENDIF
 	PL_END
+
+.Initialise_POTGO
+	move.w	#$7fff,$dff09a	; original code
+	move.w	#$ff00,$dff034
+	rts
+
+.Read_Joystick
+	move.w	$dff00c,d0
+	and.w	#~(1<<8),d0	; disable joystick "up" direction
+	btst	#14,$dff016
+	bne.b	.Fire2_Not_Pressed
+	bset	#8,d0
+.Fire2_Not_Pressed
+	rts
+
 
 .fix	move.w	d0,-(a7)
 	move.b	$dff006,d0
