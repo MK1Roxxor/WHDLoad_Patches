@@ -21,6 +21,8 @@
 ** History			***
 ***********************************
 
+; 13-Apr-2023	- support for another version added
+
 ; 03-Feb-2014	- updated to support the 1 disk "Sports Masters"
 ;		  compilation version
 
@@ -46,9 +48,9 @@
 
 
 	dc.b	"$VER: "
-.text	dc.b	"European Championship imager V1.1",10
+.text	dc.b	"European Championship imager V1.2",10
 	dc.b	"by StingRay/[S]carab^Scoopex "
-	dc.b	"(03.02.2014)",0
+	dc.b	"(13.04.2023)",0
 	CNOP	0,4
 
 
@@ -59,9 +61,22 @@
 	dc.l	0		; UNUSED, ALWAYS SET TO 0!
 	dc.l	FL_NOFILES	; List of files to be saved
 	dc.l	.crc		; Table of certain tracks with CRC values
+	dc.l	.disk1_alt	; Alternative disk structure, if CRC failed
+	dc.l	0		; Called before a disk is read
+	dc.l	SaveFiles	; Called after a disk has been read
+
+.disk1_alt
+	dc.l	.disk2		; Pointer to next disk structure
+	dc.w	1		; Disk structure version
+	dc.w	0		; Disk flags
+	dc.l	.tracks		; List of tracks which contain data
+	dc.l	0		; UNUSED, ALWAYS SET TO 0!
+	dc.l	FL_NOFILES	; List of files to be saved
+	dc.l	.crc_alt	; Table of certain tracks with CRC values
 	dc.l	.disk2		; Alternative disk structure, if CRC failed
 	dc.l	0		; Called before a disk is read
 	dc.l	SaveFiles	; Called after a disk has been read
+
 
 .disk2	dc.l	0		; Pointer to next disk structure
 	dc.w	1		; Disk structure version
@@ -79,6 +94,10 @@
 	TLEND
 
 .crc	CRCENTRY 0,$846d
+	CRCEND
+
+.crc_alt
+	CRCENTRY 0,$60d3
 	CRCEND
 
 ; disk 2 is DOS (track1: copylock)
