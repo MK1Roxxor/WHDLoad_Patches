@@ -21,6 +21,8 @@
 *** History			***
 ***********************************
 
+; 14-Apr-2023	- support for another version added
+
 ; 03-Feb-2014	- support for "Sports Masters" compilation version added,
 ;		  thanks to Chris4981 for sending his original
 
@@ -62,7 +64,7 @@
 
 FLAGS		= WHDLF_NoError|WHDLF_EmulTrap|WHDLF_ClearMem
 QUITKEY		= $59		; F10
-DEBUG
+;DEBUG
 
 ; absolute skip
 PL_SA	MACRO
@@ -85,8 +87,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	dc.w	0		; ws_DontCache
 	dc.b	0		; ws_KeyDebug
 	dc.b	QUITKEY		; ws_KeyExit
-	;dc.l	524288+65536	; ws_ExpMem
-	dc.l	0
+	dc.l	0		; ws_ExpMem
 	dc.w	.name-HEADER	; ws_name
 	dc.w	.copy-HEADER	; ws_copy
 	dc.w	.info-HEADER	; ws_info
@@ -111,7 +112,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 .name	dc.b	"European Championship 1992",0
 .copy	dc.b	"1992 Elite",0
 .info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
-	dc.b	"Version 1.01 (03.02.2014)",0
+	dc.b	"Version 1.02 (14.04.2023)",0
 
 TAB	dc.b	"0123456789ABCDEF"
 NAME	dc.b	"0",0
@@ -167,6 +168,10 @@ Patch	lea	resload(pc),a1
 	lea	PL0(pc),a0
 	cmp.w	#$be47,d0		; SPS 478
 	beq.b	.ok
+	move.l	#$80000,$fc.w		; set ext. memory
+	lea	PL0_V2(pc),a0
+	cmp.w	#$28D1,d0		; V2
+	beq.b	.ok
 
 ; unknown version
 	pea	(TDREASON_WRONGVER).w
@@ -183,8 +188,8 @@ Patch	lea	resload(pc),a1
 ; start game
 	;move.l	HEADER+ws_ExpMem(pc),d0
 	;add.l	#65536,d0		; game aligns the memory ptr
-	
-	jmp	$22(a5)			; $22 = skip alloc/avail mem
+
+	jmp	(a5)
 
 
 	
@@ -339,6 +344,17 @@ PL_GAME	PL_START
 	PL_END
 
 
+PL0_V2
+	PL_START
+	PL_ORW	$4cc+2,1<<3		; enable level 2 irq	
+	PL_P	$b98,LoadFile
+	PL_P	$cf14,Loader		; Rob Northen loader
+	PL_SA	$6c,$110		; skip "insert disk" picture
+	PL_P	$114,Disk2		; boot from disk 2 instead of rebooting
+	PL_PSS	$d894,ackLev4_Intro,2
+	PL_P	$57c,fire_decrunch	; relocate Fire-Pack decruncher
+	PL_END
+
 
 PL0	PL_START
 	PL_ORW	$4c8+2,1<<3		; enable level 2 irq	
@@ -346,11 +362,12 @@ PL0	PL_START
 	PL_P	$cf10,Loader		; Rob Northen loader
 	PL_SA	$a8,$14c		; skip "insert disk" picture
 	PL_P	150,Disk2		; boot from disk 2 instead of rebooting
-	PL_PSS	$d890,.ackLev4,2
+	PL_PSS	$d890,ackLev4_Intro,2
 	PL_P	$578,fire_decrunch	; relocate Fire-Pack decruncher
+	PL_SA	$0,$22			; skip alloc/avail mem
 	PL_END
 
-.ackLev4
+ackLev4_Intro
 	move.w	#$80,$dff09c
 	move.w	#$80,$dff09c
 	rts
@@ -397,7 +414,7 @@ Disk2	bsr	KillSys
 	jsr	resload_LoadFile(a2)
 .nohigh
 
-	move.w	#$123,$324
+	move.w	#$123,$324.w
 	clr.l	$4.w
 	jmp	(a5)
 
