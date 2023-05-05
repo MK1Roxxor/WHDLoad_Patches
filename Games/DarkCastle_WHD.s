@@ -21,6 +21,11 @@
 *** History			***
 ***********************************
 
+; 31-Jul-2016	- patch requires 512k extra memory now as otherwise game
+;		  could quit due to lack of memory
+;		- changed timing fix, the slow down can now be chosen with
+;		  CUSTOM2, 0: off, 1-4: number of frames to wait
+
 ; 25-Mar-2014	- timing fixed
 ;		- trainers added
 
@@ -53,7 +58,7 @@ MC68020	MACRO
 ;============================================================================
 
 CHIPMEMSIZE	= 524288
-FASTMEMSIZE	= 0
+FASTMEMSIZE	= 524288
 NUMDRIVES	= 1
 WPDRIVES	= %0000
 
@@ -110,12 +115,12 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"Version 1.00 (25.03.2014)",0
+		dc.b	"Version 1.01 (31.07.2016)",0
 slv_config	dc.b	"C1:X:Unlimited Lives:0;"
 		dc.b	"C1:X:Unlimited Rocks:1;"
 		dc.b	"C1:X:Unlimited Elixir:2;"
 		dc.b	"C1:X:Unlimited Bonus:3;"
-		dc.b	"C2:B:Disable Timing Fix"
+		dc.b	"C2:L:Timing Fix:Off,1x,2x,3x,4x"
 		dc.b	0
 DiskName	dc.b	"DC1",0
 		CNOP	0,4
@@ -364,14 +369,16 @@ PLGAME	PL_START
 	ext.l	d0
 
 	movem.l	d0-a6,-(a7)
-	move.l	NOTIMINGFIX(pc),d0
-	bne.b	.skip
+	move.l	TIMINGFIX(pc),d7
+	beq.b	.skip
+
 	move.l	-$1614(a4),a6	; gfxbase
 
-	jsr	-270(a6)	; WaitTOF()
-	jsr	-270(a6)	; WaitTOF()
-	jsr	-270(a6)	; WaitTOF()
-	jsr	-270(a6)	; WaitTOF()
+	
+.loop	jsr	-270(a6)	; WaitTOF()
+	subq.w	#1,d7
+	bne.b	.loop	
+
 .skip
 	movem.l	(a7)+,d0-a6
 	rts
@@ -542,7 +549,7 @@ TAGLIST		dc.l	WHDLTAG_CUSTOM1_GET
 TRAINEROPTIONS	dc.l	0
 
 		dc.l	WHDLTAG_CUSTOM2_GET
-NOTIMINGFIX	dc.l	0
+TIMINGFIX	dc.l	0			; 0: off
 
 		dc.l	TAG_END
 
