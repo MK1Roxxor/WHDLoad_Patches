@@ -21,6 +21,11 @@
 *** History			***
 ***********************************
 
+; 05-May-2023	- protection for version 2 removed
+;		- trainer options and timing fix for version 2 implemented
+
+; 03-May-2023	- support for another version added (issue #6144)
+
 ; 31-Jul-2016	- patch requires 512k extra memory now as otherwise game
 ;		  could quit due to lack of memory
 ;		- changed timing fix, the slow down can now be chosen with
@@ -55,6 +60,17 @@ PL_PSA	MACRO
 MC68020	MACRO
 	ENDM
 
+
+CHECKSUM_HLS_PROTECTED_VERSION	= $4824		; SPS 1459
+
+
+	; Trainer options
+	BITDEF	TR,UNLIMITED_LIVES,0
+	BITDEF	TR,UNLIMITED_ROCKS,1
+	BITDEF	TR,UNLIMITED_ELIXIR,2
+	BITDEF	TR,UNLIMITED_BONUS,3
+	
+
 ;============================================================================
 
 CHIPMEMSIZE	= 524288
@@ -69,7 +85,7 @@ BOOTDOS
 ;CBDOSLOADSEG
 ;CBDOSREAD
 CACHE
-DEBUG
+;DEBUG
 ;DISKSONBOOT
 DOSASSIGN
 FONTHEIGHT	= 8
@@ -115,7 +131,7 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"Version 1.01 (31.07.2016)",0
+		dc.b	"Version 1.02 (05.05.2023)",0
 slv_config	dc.b	"C1:X:Unlimited Lives:0;"
 		dc.b	"C1:X:Unlimited Rocks:1;"
 		dc.b	"C1:X:Unlimited Elixir:2;"
@@ -231,7 +247,6 @@ _bootdos
 	movem.l	.saveregs(pc),d1-d3/d5-d7/a1-a2/a4-a6
 
 	
-
 	jsr	4(a3)
 
 ; return
@@ -271,9 +286,15 @@ _bootdos
 
 
 ; decrypt HLS executable
+	cmp.w	#CHECKSUM_HLS_PROTECTED_VERSION,d0
+	bne.b	.No_HLS_Decryption_Required
+
 	movem.l	d0-a6,-(a7)
 	bsr	Decrypt
 	movem.l	(a7)+,d0-a6
+
+.No_HLS_Decryption_Required
+
 
 	move.l	a3,a0
 .patch	move.l	d7,a1
@@ -350,13 +371,14 @@ EXIT	move.l	_resload(pc),a2
 
 
 ; format: start, end, checksum, offset to patch list
-PT_GAME	dc.l	$000,$570,$4824,PLGAME-PT_GAME	; SPS 1459
-	dc.l	-1				; end of tab
+PT_GAME	dc.l	$000,$570,$4824,PLGAME-PT_GAME		; SPS 1459
+	dc.l	$006,$3c0,$E8AE,PL_GAME_V2-PT_GAME	; V2, unprotected
+	dc.l	-1					; end of tab
 
 PLGAME	PL_START
 	PL_SA	$0,$570		; jmp to main part
-	PL_PS	$12598,.stack
-	PL_PS	$c0f2,.fixtiming
+	PL_PS	$12598,Set_Stack
+	PL_PS	$c0f2,Fix_Timing
 
 ;	PL_R	$14b0		; unlimited rocks
 ;	PL_R	$1478		; unlimited bonus
@@ -364,7 +386,7 @@ PLGAME	PL_START
 ;	PL_R	$1516		; unlimited elixir
 	PL_END
 
-.fixtiming
+Fix_Timing
 	move.w	$12(a0),d0
 	ext.l	d0
 
@@ -384,9 +406,40 @@ PLGAME	PL_START
 	rts
 
 
-.stack	sub.l	#STACKSIZE,d0
+Set_Stack
+	sub.l	#STACKSIZE,d0
 	addq.l	#8,d0
 	rts
+
+
+PL_GAME_V2
+	PL_START
+	PL_PS	$12028,Set_Stack
+
+	; disable protection
+	PL_DATA	$cdd0,.String_Length
+.Graphics_Name	dc.b	"graphics"
+.String_Length	= *-.Graphics_Name
+
+	PL_PS	$bb82,Fix_Timing
+
+
+	PL_IFC1X	TRB_UNLIMITED_LIVES
+	PL_R	$f74
+	PL_ENDIF
+
+	PL_IFC1X	TRB_UNLIMITED_ROCKS
+	PL_R	$f40
+	PL_ENDIF
+
+	PL_IFC1X	TRB_UNLIMITED_ELIXIR
+	PL_R	$fa6
+	PL_ENDIF
+
+	PL_IFC1X	TRB_UNLIMITED_BONUS
+	PL_R	$f08
+	PL_ENDIF
+	PL_END
 
 
 
@@ -506,38 +559,6 @@ Decrypt	lsl.l	#2,d7
 	DC.W	$1A5A,$0027,$1A83,$0024,$1AA9,$0024,$1ACF,$0027
 	DC.W	$1AF8,$003E,$1B38,$000D,$1B47,$0013,$0000,$0000
 
-
-FixAudXVol
-	move.l	d0,-(a7)
-	moveq	#0,d0
-	move.b	3(a6),d0
-	move.w	d0,8(a5)
-	move.l	(a7)+,d0
-	rts
-
-FixDMAWait
-	movem.l	d0/d1,-(a7)
-	moveq	#5-1,d1	
-.loop	move.b	$dff006,d0
-.wait	cmp.b	$dff006,d0
-	beq.b	.wait
-	dbf	d1,.loop
-	movem.l	(a7)+,d0/d1
-	rts
-
-
-WaitRaster
-	move.l	d0,-(a7)
-.wait	move.l	$dff004,d0
-	and.l	#$1ff00,d0
-	cmp.l	#16<<8,d0
-	bne.b	.wait
-.wait2	move.l	$dff004,d0
-	and.l	#$1ff00,d0
-	cmp.l	#16<<8,d0
-	beq.b	.wait2
-	move.l	(a7)+,d0
-	rts
 
 
 TAGLIST		dc.l	WHDLTAG_CUSTOM1_GET
