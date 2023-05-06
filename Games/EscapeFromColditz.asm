@@ -22,6 +22,8 @@
 ;		- NTSC compatible rasterwait
 ;		26.12.22 StingRay
 ;		- memory size reduced to 512k, access fault fixed
+;		06.05.23 Stingray
+;		- polish flag fixed (issue #5982)
 ;  :Requires.	-
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -100,7 +102,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.4 (26.12.2022)",0
+	dc.b	"Version 1.4A (06.05.2023)",0
 
 Name	dc.b	"df1:colditz_demo",0
 	CNOP	0,2
@@ -284,7 +286,47 @@ PLMAIN	PL_START
 					; for 13 seconds
 
 	PL_PS	$30e0,.Fix_Access
+
+
+	PL_PS	$797a,.Set_Flag
+
 	PL_END
+
+.Set_Flag
+	cmp.w	#03,d0
+	bne.b	.Not_Polish_Flag
+
+	movem.l	d7/a0/a1,-(a7)
+	lea	$51a42,a0
+	add.w	#3*64*4,a0
+	lea	.flag(pc),a1
+	moveq	#256/4-1,d7
+.copy	move.l	(a1)+,(a0)+
+	dbf	d7,.copy
+	movem.l	(a7)+,d7/a0/a1
+
+.Not_Polish_Flag
+	move.l	#$51a42,d3
+	rts
+
+.flag	DC.L	$FFFFFFE0,$7FFFFFE4,$80000018,$FFFFFFFC
+	DC.L	$00000000,$FFFFFFF8,$80000004,$FFFFFFFC
+	DC.L	$00000004,$FFFFFFFC,$80000000,$FFFFFFFC
+	DC.L	$00000004,$FFFFFFFC,$80000000,$FFFFFFFC
+	DC.L	$00000004,$FFFFFFFC,$80000000,$FFFFFFFC
+	DC.L	$00000004,$FFFFFFFC,$80000000,$FFFFFFFC
+	DC.L	$00000004,$FFFFFFFC,$80000000,$FFFFFFFC
+	DC.L	$00000004,$FFFFFFFC,$80000000,$FFFFFFFC
+	DC.L	$7FFFFFFC,$FFFFFFFC,$FFFFFFF8,$FFFFFFFC
+	DC.L	$7FFFFFFC,$FFFFFFFC,$FFFFFFF8,$FFFFFFFC
+	DC.L	$7FFFFFFC,$FFFFFFFC,$FFFFFFF8,$FFFFFFFC
+	DC.L	$7FFFFFFC,$FFFFFFFC,$FFFFFFF8,$FFFFFFFC
+	DC.L	$7FFFFFFC,$FFFFFFFC,$FFFFFFF8,$FFFFFFFC
+	DC.L	$7FFFFFFC,$FFFFFFFC,$FFFFFFF8,$FFFFFFFC
+	DC.L	$7FFFFFFC,$FFFFFFFC,$FFFFFFF8,$FFFFFFFC
+	DC.L	$00000004,$FFFFFFF8,$FFFFFFFC,$FFFFFFFC
+
+
 
 .Fix_Access
 	bsr.b	.Get_Base
