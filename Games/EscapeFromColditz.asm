@@ -288,28 +288,40 @@ PLMAIN	PL_START
 	PL_PS	$30e0,.Fix_Access
 
 
-	PL_PS	$797a,.Set_Flag
-
+	PL_PS	$1b8a,.Fix_Polish_Panel_Graphics
 	PL_END
 
-.Set_Flag
-	cmp.w	#03,d0
-	bne.b	.Not_Polish_Flag
 
-	movem.l	d7/a0/a1,-(a7)
-	lea	$51a42,a0
-	add.w	#3*64*4,a0
-	lea	.flag(pc),a1
-	moveq	#256/4-1,d7
-.copy	move.l	(a1)+,(a0)+
-	dbf	d7,.copy
-	movem.l	(a7)+,d7/a0/a1
+.PANEL_LOCATION		= $509c0
+.FLAGS_LOCATION		= $51a42
+.FLAG_SIZE		= 32/8*16*4
+.POLISH_FLAG_NUMBER	= 3
+.POLISH_FLAG_LOCATION	= .FLAGS_LOCATION+.POLISH_FLAG_NUMBER*.FLAG_SIZE
 
-.Not_Polish_Flag
-	move.l	#$51a42,d3
+.Fix_Polish_Panel_Graphics
+	jsr	$80+$c000		; load panel files and more
+
+	; correct the Polish flag below prisoner face
+	lea	.PANEL_LOCATION,a0
+	lea	.panel_diffs(pc),a1
+	moveq	#18-1,d7
+.fix_polish_mini_flag
+	move.w	(a1)+,d0
+	move.w	(a1)+,d1
+	move.b	d1,(a0,d0.w)
+	dbf	d7,.fix_polish_mini_flag
+
+	
+	lea	.Polish_Flag(pc),a0
+	lea	.POLISH_FLAG_LOCATION,a1
+	moveq	#.FLAG_SIZE/4-1,d7
+.copy_polish_flag_to_panel
+	move.l	(a0)+,(a1)+
+	dbf	d7,.copy_polish_flag_to_panel
 	rts
 
-.flag	DC.L	$FFFFFFE0,$7FFFFFE4,$80000018,$FFFFFFFC
+.Polish_Flag
+	DC.L	$FFFFFFE0,$7FFFFFE4,$80000018,$FFFFFFFC
 	DC.L	$00000000,$FFFFFFF8,$80000004,$FFFFFFFC
 	DC.L	$00000004,$FFFFFFFC,$80000000,$FFFFFFFC
 	DC.L	$00000004,$FFFFFFFC,$80000000,$FFFFFFFC
@@ -326,6 +338,13 @@ PLMAIN	PL_START
 	DC.L	$7FFFFFFC,$FFFFFFFC,$FFFFFFF8,$FFFFFFFC
 	DC.L	$00000004,$FFFFFFF8,$FFFFFFFC,$FFFFFFFC
 
+
+.panel_diffs
+	DC.W	$0AC6,$0000,$0AC7,$0000,$0B16,$0080,$0B17,$0002
+	DC.W	$0B66,$0000,$0B67,$0002,$0BB6,$0080,$0BB7,$0000
+	DC.W	$0C06,$0000,$0C07,$0002,$0C56,$0080,$0C57,$0000
+	DC.W	$0CA6,$007F,$0CF6,$00FF,$0D46,$007F,$0D96,$00FF
+	DC.W	$0DE6,$007F,$0E36,$00FF
 
 
 .Fix_Access
@@ -481,3 +500,4 @@ WaitRaster
 .wait2	btst	#0,$dff005
 	bne.b	.wait2
 	rts
+
