@@ -24,6 +24,9 @@
 ;		- memory size reduced to 512k, access fault fixed
 ;		06.05.23 Stingray
 ;		- polish flag fixed (issue #5982)
+;		07.04.23 StingRay
+;		- minor source clean-up and information about the "flag fixes"
+;		  added
 ;  :Requires.	-
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -102,7 +105,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.4A (06.05.2023)",0
+	dc.b	"Version 1.4A (07.05.2023)",0
 
 Name	dc.b	"df1:colditz_demo",0
 	CNOP	0,2
@@ -248,8 +251,7 @@ Blit1601	move.w	#$1601,$58(a6)
 
 
 LoadFile	movem.l	a0-a2/d0-d1,-(sp)
-		;lea	4(a0),a0		;skip DF1: string
-	addq.w	#4,a0
+		addq.w	#4,a0		; skip "df1:" string
 		move.l	resload(pc),a2
 		jsr	resload_LoadFile(a2)
 		move.l	d0,d1
@@ -339,6 +341,13 @@ PLMAIN	PL_START
 	DC.L	$00000004,$FFFFFFF8,$FFFFFFFC,$FFFFFFFC
 
 
+; Format: offset, value
+; The offset already takes the palette offset (16*2 bytes) into
+; account. Panel graphics start at offset 32 in file "panel.bin",
+; dimensions are 320*24 pixel, 4 bitplanes in interleaved format
+; are used. The ".panel_diffs" table has been created by manually
+; correcting the flag data in PPaint and comparing the source panel data
+; with the modified one.
 .panel_diffs
 	DC.W	$0AC6,$0000,$0AC7,$0000,$0B16,$0080,$0B17,$0002
 	DC.W	$0B66,$0000,$0B67,$0002,$0BB6,$0080,$0BB7,$0000
