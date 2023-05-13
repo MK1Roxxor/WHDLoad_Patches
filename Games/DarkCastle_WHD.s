@@ -21,6 +21,12 @@
 *** History			***
 ***********************************
 
+; 13-May-2023	- support for another version added (sent by Snoopy1234),
+;		  this version is Herndon HLS protected but lacks the
+;		  encryption
+;		- timing fix had to be done differently for this version,
+;		  code for the timing fix for the other 2 version adapted
+
 ; 05-May-2023	- protection for version 2 removed
 ;		- trainer options and timing fix for version 2 implemented
 
@@ -42,7 +48,6 @@
 	INCDIR	SOURCES:Include/
 	INCLUDE	whdload.i
 	INCLUDE	whdmacros.i
-	;INCLUDE	lvo/dos.i
 
 
 
@@ -131,7 +136,7 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"Version 1.02 (05.05.2023)",0
+		dc.b	"Version 1.03 (13.05.2023)",0
 slv_config	dc.b	"C1:X:Unlimited Lives:0;"
 		dc.b	"C1:X:Unlimited Rocks:1;"
 		dc.b	"C1:X:Unlimited Elixir:2;"
@@ -372,7 +377,8 @@ EXIT	move.l	_resload(pc),a2
 
 ; format: start, end, checksum, offset to patch list
 PT_GAME	dc.l	$000,$570,$4824,PLGAME-PT_GAME		; SPS 1459
-	dc.l	$006,$3c0,$E8AE,PL_GAME_V2-PT_GAME	; V2, unprotected
+	dc.l	$006,$3c0,$E8AE,PL_GAME_V2-PT_GAME	; V2, different protection
+	dc.l	$006,$454,$05EA,PL_GAME_V3-PT_GAME	; V3, Herndon HLS variant
 	dc.l	-1					; end of tab
 
 PLGAME	PL_START
@@ -389,21 +395,7 @@ PLGAME	PL_START
 Fix_Timing
 	move.w	$12(a0),d0
 	ext.l	d0
-
-	movem.l	d0-a6,-(a7)
-	move.l	TIMINGFIX(pc),d7
-	beq.b	.skip
-
-	move.l	-$1614(a4),a6	; gfxbase
-
-	
-.loop	jsr	-270(a6)	; WaitTOF()
-	subq.w	#1,d7
-	bne.b	.loop	
-
-.skip
-	movem.l	(a7)+,d0-a6
-	rts
+	bra.w	Delay_Game_Speed
 
 
 Set_Stack
@@ -440,6 +432,51 @@ PL_GAME_V2
 	PL_R	$f08
 	PL_ENDIF
 	PL_END
+
+
+PL_GAME_V3
+	PL_START
+	PL_PS	$12716,Set_Stack
+	PL_SA	$d060,$d0f6		; skip protection
+	PL_P	$875e,.Fix_Timing
+
+
+	PL_IFC1X	TRB_UNLIMITED_LIVES
+	PL_R	$e02a
+	PL_ENDIF
+
+	PL_IFC1X	TRB_UNLIMITED_ROCKS
+	PL_R	$dff6
+	PL_ENDIF
+
+	PL_IFC1X	TRB_UNLIMITED_ELIXIR
+	PL_R	$e05c
+	PL_ENDIF
+
+	PL_IFC1X	TRB_UNLIMITED_BONUS
+	PL_R	$dfbe
+	PL_ENDIF
+	PL_END
+
+
+.Fix_Timing
+	addq.l	#1,-$25f0(a4)		; original code
+
+Delay_Game_Speed
+	movem.l	d7/a6,-(a7)
+	move.l	$4.w,a6
+	move.l	$9c(a6),a6		; gfxbase
+	move.l	TIMINGFIX(pc),d7
+	beq.b	.Timing_Fix_Not_Enabled
+.Delay_Loop
+	jsr	_LVOWaitTOF(a6)
+	subq.w	#1,d7
+	bne.b	.Delay_Loop
+
+.Timing_Fix_Not_Enabled
+	movem.l	(a7)+,d7/a6
+
+	rts
 
 
 
