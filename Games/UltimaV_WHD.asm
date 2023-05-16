@@ -9,6 +9,9 @@
 ; - illegal copperlist entries fixed
 ; - move.w #$C010,$dff09a disabled in slave
 
+; V1.4, 16.05.2023
+; - DMA wait in replayer fixed (issue #6167)
+
 DEBUG
 
 	INCDIR	SOURCES:INCLUDE/
@@ -45,7 +48,7 @@ HEADER	SLAVE_HEADER		; ws_Security + ws_ID
 	IFD	DEBUG
 	dc.b	"Debug!!! "
 	ENDC
-	dc.b	'Version 1.3 (12.04.2018)',0
+	dc.b	'Version 1.4 (16.05.2023)',0
 Name	DC.B	'loader',0
 	CNOP	0,4
 
@@ -149,6 +152,8 @@ PLMAIN	PL_START
 	PL_W	$2214+2*4,$1fe
 	PL_W	$2214+3*4,$1fe
 	
+	PL_PSS	$456,Fix_DMA_Wait,2
+	PL_PSS	$46e,Fix_DMA_Wait,2
 	PL_END
 
 AckVBI	move.w	#1<<5,$dff09c
@@ -299,6 +304,22 @@ SaveFile
 	jsr	resload_SaveFile(a6)
 	movem.l	(sp)+,d0-d7/a0-a7
 	jmp	$1B8C.W
+
+Fix_DMA_Wait
+	moveq	#8,d0
+
+; d0.w: number of raster lines to wait
+Wait_Raster_Lines
+	move.w	d1,-(a7)
+.loop	move.b	$dff006,d1
+.still_in_same_raster_line
+	cmp.b	$dff006,d1
+	beq.b	.still_in_same_raster_line	
+	subq.w	#1,d0
+	bne.b	.loop
+	move.w	(a7)+,d1
+	rts
+
 
 resload	dc.l	0
 
