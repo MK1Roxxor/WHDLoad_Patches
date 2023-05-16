@@ -1,3 +1,13 @@
+; V1.4, StingRay, 16.05.2023
+; - local labels restored, source can be assembled with Asm-Pro again
+; - Wizardoids mini game didn't work (issue #6120)
+; - disk access disabled in Wizardoids game
+; - Bplcon0 color bit fixes for Wizardoids game
+; - EmulDivZero flag used, code to skip exceptions removed/disabled
+; - access faults in Wizardoids game fixed
+; - Wizardoids mini game can be run with CUSTOM2
+; - special case code for patching Wizardoids game in loader patch removed
+
 ; V1.3, Codetapper, 01.08.2020
 ; - Added ability to show the happy birthday intro
 ; - Fixed empty DBF loops in the ProTracker replayer
@@ -16,7 +26,7 @@
 ;   recoded
 ; - version check added
 
-	INCDIR	INCLUDE:
+	INCDIR	SOURCES:INCLUDE/
 	INCLUDE	WHDLoad.i
 	INCLUDE	WHDMacros.i
 
@@ -31,7 +41,7 @@
 		SUPER				;disable supervisor warnings
 		ENDC
 
-FLAGS		= WHDLF_NoError|WHDLF_EmulTrap|WHDLF_ClearMem
+FLAGS		= WHDLF_NoError|WHDLF_EmulTrap|WHDLF_ClearMem|WHDLF_EmulDivZero
 QUITKEY		= $59		; F10
 ;DEBUG
 
@@ -50,7 +60,7 @@ PL_PSA	MACRO
 HEADER	SLAVE_HEADER		; ws_Security + ws_ID
 	DC.W	17		; ws_Version
 	dc.w	FLAGS		; ws_Flags
-	DC.L	$100000		; ws_BaseMemSize
+	DC.L	$180000		; ws_BaseMemSize
 	DC.L	0		; ws_ExecInstall
 	DC.W	Patch-HEADER	; ws_GameLoader
 	DC.W	.dir-HEADER	; ws_CurrentDir
@@ -76,6 +86,7 @@ HEADER	SLAVE_HEADER		; ws_Security + ws_ID
 	dc.b	"C1:X:Unlimited Money:2;"
 	dc.b	"C1:X:In-Game Keys (press HELP during game):3;"
 	dc.b	"C1:X:Happy birthday intro:4;"
+	dc.b	"C2:B:Run Wizardoids mini game;"
 	dc.b	0
 
 .name	DC.B	'--<> W i Z K i D <>--',0
@@ -86,7 +97,7 @@ HEADER	SLAVE_HEADER		; ws_Security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	DC.B	"v1.3 (01.08.2020)",10
+	DC.B	"v1.4 (16.05.2023)",10
 	DC.B	"------------------------------",0
 
 .dir	IFD	DEBUG
@@ -117,6 +128,7 @@ Patch	lea	resload(pc),a1
 
 .ok
 
+
 ; stingray, v1.2
 	lea	PLMAIN(pc),a0
 	move.l	a5,a1
@@ -124,6 +136,44 @@ Patch	lea	resload(pc),a1
 	jsr	resload_Patch(a2)
 
 	jmp	(a5)
+
+
+Patch_Astcode
+	movem.l	d0-a6,-(a7)
+	lea	PL_ASTCODE(pc),a0
+	lea	$500.w,a1
+	move.l	resload(pc),a2
+	jsr	resload_Patch(a2)
+	movem.l	(a7)+,d0-a6
+	rts
+
+PL_ASTCODE
+	PL_START
+	PL_ORW	$408e+2,1<<9		; set Bplcon0 color bit
+	PL_ORW	$75f0+2,1<<9		; set Bplcon0 color bit
+	PL_P	$80,.LoadIFF
+	PL_P	$4e,LoadFile
+
+	PL_PSS	$132,.Initialise_Registers,2
+	PL_R	$57fc			; disable drive access
+	PL_END
+
+
+.LoadIFF
+	; disable level 1 interrupt, if this is not done, the
+	; screen may stay black and the game will not run	
+	move.w	#1<<2,$dff09a
+	bsr	LoadIFF
+	move.w	#1<<15+1<<14+1<<2,$dff09a
+	rts
+
+
+; Fix access faults caused by uninitialised registers
+
+.Initialise_Registers
+	moveq	#2,d0
+	moveq	#14,d2
+	rts
 
 
 
@@ -136,7 +186,7 @@ PLMAIN	PL_START
 	PL_W	$c2+6,$6036
 	PL_R	$6360			; disable raster wait
 	PL_W	$11156,$4e71		; as above
-	PL_SA	$2f10,$2f18		; skip div0
+	;PL_SA	$2f10,$2f18		; skip div0
 	PL_L	$11b32,$70004A40	; moveq #0,d0 tst.w d0
 	PL_R	$11b32+4
 	PL_L	$120d0,$70004A40	; moveq #0,d0 tst.w d0
@@ -204,7 +254,23 @@ PLMAIN	PL_START
 	PL_B	$322C,$60
 	PL_ENDIF
 
+; V1.4 patches, StingRay
+	PL_P	$1630e,.Patch_Astcode	; Wizardoids mini game
+	PL_IFC2	
+	PL_P	$0,.Run_Astcode
+	PL_ENDIF
 	PL_END
+
+.Run_Astcode
+	jmp	$80000+$162c2
+
+.Patch_Astcode
+	moveq	#10,d2			; orignal code, number of credits
+	bsr	Patch_Astcode
+	move.w	#$7fff,$dff09c
+	move.w	#$7fff,$dff09a
+	jmp	$500.w
+
 
 .LoadHighscores
 	lea	HighName(pc),a0
@@ -274,14 +340,14 @@ PLMAIN	PL_START
 
 
 
-SCREEN		= $60000
-HEIGHT		= 64 			; 8 text lines
-YSTART		= 80
+.SCREEN		= $60000
+.HEIGHT		= 64 			; 8 text lines
+.YSTART		= 80
 
 .ShowHelp
-	lea	SCREEN,a0		; screen
+	lea	.SCREEN,a0		; screen
 	move.l	HEADER+ws_ExpMem(pc),a1
-	move.w	#(40*HEIGHT)/4-1,d7
+	move.w	#(40*.HEIGHT)/4-1,d7
 .copy	move.l	(a0),d0
 	clr.l	(a0)+
 	move.l	d0,(a1)+
@@ -300,7 +366,7 @@ YSTART		= 80
 
 ; write help text
 	lea	.TXT(pc),a0
-	lea	SCREEN,a1
+	lea	.SCREEN,a1
 	moveq	#0,d1			; x pos
 	moveq	#0,d2			; y pos
 .next	sub.l	a4,a4			; special chars
@@ -322,7 +388,7 @@ YSTART		= 80
 
 	sub.w	#" ",d0
 	lsl.w	#3,d0
-.write	lea	font,a2		; font
+.write	lea	.font,a2		; font
 	add.w	d0,a2
 .go	lea	(a1,d1.w),a3		; screen
 	add.w	d2,a3
@@ -340,11 +406,11 @@ YSTART		= 80
 
 .Fire	bsr	WaitRaster
 
-	move.w	#($2c+YSTART)<<8|81,$8e(a6)
-	move.w	#($2c+YSTART+HEIGHT)<<8|$c1,$90(a6)
+	move.w	#($2c+.YSTART)<<8|81,$8e(a6)
+	move.w	#($2c+.YSTART+.HEIGHT)<<8|$c1,$90(a6)
 	move.w	#$38,$92(a6)
 	move.w	#$d0,$94(a6)
-	move.l	#SCREEN,$e0(a6)
+	move.l	#.SCREEN,$e0(a6)
 	move.w	#$1200,$100(a6)
 	move.w	#0,$108(a6)
 	move.w	#0,$10a(a6)
@@ -364,8 +430,8 @@ YSTART		= 80
 	beq.b	.release
 
 	move.l	HEADER+ws_ExpMem(pc),a0
-	lea	SCREEN,a1		; screen
-	move.w	#(40*HEIGHT)/4-1,d7
+	lea	.SCREEN,a1		; screen
+	move.w	#(40*.HEIGHT)/4-1,d7
 .restore
 	move.l	(a0)+,(a1)+
 	dbf	d7,.restore
@@ -375,7 +441,7 @@ YSTART		= 80
 	move.w	d0,$96(a6)
 	rts
 
-font	= $80000+$8db8
+.font	= $80000+$8db8
 
 ; chars not available in font, "drawn" by me :)
 .MINUS	dc.b	%00000000
@@ -422,17 +488,19 @@ font	= $80000+$8db8
 
 	bsr	LoadFile
 
-	cmp.l	#"astc",(a4)
-	bne.b	.nospecial
+;	cmp.l	#"astc",(a4)
+;	bne.b	.nospecial
 
-	lea	LoadIFF(pc),a0
-	move.w	#$4EF9,($80,a1)
-	move.l	a0,($82,a1)
+;	bsr	Patch_Astcode
 
-	lea	.LoadFile(pc),a0
-	move.w	#$4EF9,($4E,a1)
-	move.l	a0,($50,a1)
-	move.w	#$600C,($16C0,a1)
+;	lea	LoadIFF(pc),a0
+;	move.w	#$4EF9,($80,a1)
+;	move.l	a0,($82,a1)
+
+;	lea	.LoadFile(pc),a0
+;	move.w	#$4EF9,($4E,a1)
+;	move.l	a0,($50,a1)
+;	move.w	#$600C,($16C0,a1)
 
 .nospecial
 	movem.l	(a7)+,d0-a6
@@ -690,7 +758,7 @@ _MusicDelay	movem.l	d0-d1,-(sp)
 		moveq	#8-1,d1
 .int2w1		move.b	(_custom+vhposr),d0
 .int2w2		cmp.b	(_custom+vhposr),d0	;one line is 63.5 µs
-		beq	.int2w2
+		beq.b	.int2w2
 		dbf	d1,.int2w1
 		movem.l	(sp)+,d0-d1
 		rts
