@@ -21,6 +21,8 @@
 ;		- save game size reduced to 16100 bytes
 ;		- 2 blitter waits added
 ;		- title in about window changed (Of -> of) :)
+;		16.05.2020:
+;		- problem with repeating intro fixed
 ;  :Requires.	-
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -37,7 +39,7 @@
 	ENDC
 
 FLAGS	= WHDLF_NoError|WHDLF_EmulTrap|WHDLF_ClearMem	;ws_flags	
-DEBUG
+;DEBUG
 
 ;======================================================================
 
@@ -68,7 +70,7 @@ HEADER
 .name	dc.b	'Chambers of Shaolin',0
 .copy	dc.b	'1989 Thalion',0
 .info	dc.b	'Installed and fixed by Mr.Larmer & StingRay',10
-	dc.b	'Version 1.2 (11.01.2016)',-1
+	dc.b	'Version 1.21 (15.05.2020)',-1
 	dc.b	'Greetings to Mario Cattaneo',10
 	dc.b	'Jeff',0
 	CNOP 0,2
@@ -156,6 +158,8 @@ PLBOOT3049
 	PL_PSS	$bde,.setkbd,2	; install keyboard interrupt
 	PL_R	$d7a		; end level 2 interrupt code
 	PL_P	$d1c,AckVBI
+
+	PL_W	$6c,$4e71	; remove d0 check
 	PL_END
 
 .setkbd	bsr	SetLev2IRQ
@@ -181,6 +185,8 @@ PLBOOT3050
 	PL_PSS	$bda,.setkbd,2	; install keyboard interrupt
 	PL_R	$d76		; end level 2 interrupt code
 	PL_P	$d18,AckVBI
+
+	PL_W	$68,$4e71	; remove d0 check
 	PL_END
 
 .setkbd	bsr	SetLev2IRQ
