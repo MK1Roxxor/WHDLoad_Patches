@@ -21,6 +21,8 @@
 *** History			***
 ***********************************
 
+; 06-Jun-2023	- protection properly disabled
+
 ; 05-Sep-2018	- DOSASSIGN define removed, not needed
 
 ; 29-Apr-2013	- work started
@@ -53,7 +55,7 @@ BOOTDOS
 ;CBDOSLOADSEG
 ;CBDOSREAD
 CACHE
-DEBUG
+;DEBUG
 ;DISKSONBOOT
 ;DOSASSIGN
 FONTHEIGHT	= 8
@@ -73,6 +75,7 @@ POINTERTICKS	= 1
 ;PROMOTE_DISPLAY
 STACKSIZE	= 6000
 ;TRDCHANGEDISK
+CBDOSREAD			;enable _cb_dosRead routine
 
 ;============================================================================
 
@@ -99,7 +102,7 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"Debug!!! "
 		ENDC
-		dc.b	"Version 1.00 (25.09.2018)",0
+		dc.b	"Version 1.01 (06.06.2023)",0
 
 slv_config		dc.b	0
 		CNOP	0,4
@@ -214,7 +217,7 @@ PT_GAME	dc.w	$bfcd			; checksum
 
 PLGAME	PL_START
 	PL_PS	$1764a,.stack
-	PL_R	$1c850			; disable protection check
+	;PL_R	$1c850			; disable interstel police warning
 	PL_END
 
 
@@ -227,6 +230,57 @@ TAGLIST		dc.l	WHDLTAG_ATTNFLAGS_GET
 		dc.l	TAG_END
 
 
+
+;---------------
+; IN:	D0 = ULONG bytes read
+;	D1 = ULONG offset in file
+;	A0 = CPTR name of file
+;	A1 = APTR memory buffer
+; OUT:	-
+
+_cb_dosRead
+		move.l	a0,a2
+.1		tst.b	(a2)+
+		bne.b	.1
+		lea	.name(pc),a3
+		move.l	a3,a4
+.2		tst.b	(a4)+
+		bne.b	.2
+		sub.l	a4,a2
+		add.l	a3,a2		;first char to check
+.4		move.b	(a2)+,d2
+		cmp.b	#"A",d2
+		blo.b	.3
+		cmp.b	#"Z",d2
+		bhi.b	.3
+		add.b	#$20,d2
+.3		cmp.b	(a3)+,d2
+		bne.b	.no
+		tst.b	d2
+		bne.b	.4
+
+	;check position
+		move.l	d0,d2
+		add.l	d1,d2
+		lea	.data(pc),a2
+		moveq	#0,d3
+.next		movem.l	(a2)+,d3-d4
+		tst.l	d3
+		beq.b	.no
+		cmp.l	d1,d3
+		blo.b	.next
+		cmp.l	d2,d3
+		bhs.b	.next
+		sub.l	d1,d3
+		move.w	d4,(a1,d3.l)
+		bra.b	.next
+
+.no		rts
+
+.name		dc.b	"starflt.ago",0	;lower case!
+	EVEN
+.data		dc.l	$39f4c,$6012
+		dc.l	0
 
 
 
