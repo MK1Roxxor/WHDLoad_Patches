@@ -21,6 +21,8 @@
 *** History			***
 ***********************************
 
+; 17-Jun-2023	- unlimited time trainer didn't work properly in level 4
+
 ; 17-Dec-2022	- restarted from scratch
 ;		- decruncher relocated to fast memory
 ;		- highscore load/save added
@@ -112,7 +114,7 @@ HEADER	SLAVE_HEADER			; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG (do NOT release!) "
 	ENDC
-	dc.b	"Version 1.3 (17.12.2022)",10
+	dc.b	"Version 1.3a (17.06.2023)",10
 	dc.b	10
 	dc.b	"In-Game Keys:",10
 	dc.b	"T: Toggle Unlimited Time E: Refresh Energy",10
@@ -216,6 +218,7 @@ PL_GAME	PL_START
 
 	PL_IFC1X	TRB_UNLIMITED_TIME
 	PL_W	$2e0,$4e71
+	PL_B	$7162,$4a			; level 4
 	PL_ENDIF
 
 	PL_END
@@ -307,6 +310,7 @@ PL_GAME	PL_START
 
 .Toggle_Unlimited_Time
 	eor.w	#$cf70,$13000+$2e0
+	eor.b	#$19,$13000+$7162		; level 4
 	rts
 
 
