@@ -21,6 +21,10 @@
 *** History			***
 ***********************************
 
+; 04-Jul-2023	- default quitkey changed to PrtSc as F10 is used in
+;		  the game (issue #6202)
+;		- unused code removed
+
 ; 21-Dec-2015	- work started
 ;		- and finished a while later, Herndon HLS executable
 ;		  decrypted, RawDIC imager coded, Load/Save diretory
@@ -87,7 +91,7 @@ STACKSIZE	= 6000
 
 slv_Version	= 17
 slv_Flags	= WHDLF_NoError|WHDLF_Examine|WHDLF_EmulTrap
-slv_keyexit	= $59	; F10
+slv_keyexit	= $5d	; PrtSc
 
 
 ;============================================================================
@@ -108,7 +112,7 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"Version 1.2 (21.12.2015)",0
+		dc.b	"Version 1.3 (04.07.2023)",0
 slv_config	dc.b	0
 		CNOP	0,4
 
@@ -128,8 +132,6 @@ _bootdos
 	move.l	d0,(a0)
 
 	move.l	_resload(pc),a2
-	lea	TAGLIST(pc),a0
-	jsr	resload_Control(a2)
 
 ; load game
 .dogame	lea	.game(pc),a0
@@ -322,15 +324,6 @@ PLGAME	PL_START
 	PL_SA	$0,$4f0			; skip all Herndon HLS stuff
 	PL_SA	$12d2,$1306		; skip load/save directory request
 	PL_END
-
-
-
-
-
-
-
-TAGLIST		dc.l	TAG_END
-
 
 
 
