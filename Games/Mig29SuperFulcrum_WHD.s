@@ -21,6 +21,10 @@
 *** History			***
 ***********************************
 
+; 05-Jul-2023	- support for another version added (1 disk compilation
+;		  version)
+;		- CPU dependent DMA waits in all replayers fixed
+
 ; 12-Mar-2013	- game mode can be selected with CUSTOM2
 
 ; 11-Mar-2013	- work started
@@ -100,7 +104,7 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"Version 1.00 (11.03.2013)",0
+		dc.b	"Version 1.01 (05.07.2023)",0
 
 slv_config	dc.b	"C1:B:Skip Intro;"
 		dc.b	"C2:L:Game Mode:"
@@ -209,9 +213,20 @@ _bootdos
 	lsr.w	#8,d0
 	addq.w	#1,d0		; screen height
 	and.w	#32-1,d1	; # of colors
+
+	move.w	Game_Version(pc),d2
+	beq.b	.Set_Parameters_For_Game_Version1
+	move.w	d1,$1f5e+4+2(a3)
+	move.w	d0,$1f66+4+2(a3)
+	bra.b	.Run_Game
+
+
+.Set_Parameters_For_Game_Version1
 	move.w	d0,$1f70+4+2(a3)
 	move.w	d1,$1f78+4+2(a3)
 
+
+.Run_Game
 	
 .normal
 
@@ -261,6 +276,10 @@ _bootdos
 	beq.b	.wrongver
 	cmp.w	d0,d2
 	beq.b	.found
+
+	lea	Game_Version(pc),a1
+	addq.w	#1,(a1)
+
 	addq.w	#4*2,a0			; next entry in tab
 	tst.w	(a0)
 	beq.b	.wrongver
@@ -334,16 +353,30 @@ EXIT	move.l	_resload(pc),a2
 
 PT_INTRO
 	dc.w	$18,$1e4,$360a,PLINTRO-PT_INTRO
+	dc.w	$18,$1e4,$b99f,PLINTRO_V2-PT_INTRO	; V2
 	dc.w	0				; end of tab
 
 PLINTRO	PL_START
+	PL_PSS	$b712,Fix_DMA_Wait,2
+	PL_PSS	$b728,Fix_DMA_Wait,2
+	PL_PSS	$be50,Fix_DMA_Wait,2
+	PL_PSS	$be66,Fix_DMA_Wait,2
+	
+	PL_END
+
+PLINTRO_V2
+	PL_START
+	PL_PSS	$ba8e,Fix_DMA_Wait,2
+	PL_PSS	$baa4,Fix_DMA_Wait,2
+	PL_PSS	$c1cc,Fix_DMA_Wait,2
+	PL_PSS	$c1e2,Fix_DMA_Wait,2
 	PL_END
 
 
-
 ; format: start, end, checksum, offset to patch list
-PT_GAME	dc.w	$18,$1e4,$7833,PLGAME-PT_GAME	;
-	dc.w	0				; end of tab
+PT_GAME	dc.w	$18,$1e4,$7833,PLGAME-PT_GAME		;
+	dc.w	$18,$1e4,$ff21,PLGAME_V2-PT_GAME	; V2
+	dc.w	0					; end of tab
 
 
 PLGAME	PL_START
@@ -359,6 +392,27 @@ PLGAME	PL_START
 	rts
 
 
+PLGAME_V2
+	PL_START
+	PL_SA	$1eb4,$1f5e		; skip height/number of colors input
+	PL_SA	$1f6e,$1f82
+
+	PL_R	$232c			; don't open serial.device
+
+	PL_P	$32260,.crack		: disable Copylock
+	PL_PSS	$28066,Fix_DMA_Wait,2
+	PL_PSS	$2807c,Fix_DMA_Wait,2
+	PL_PSS	$287a4,Fix_DMA_Wait,2
+	PL_PSS	$287ba,Fix_DMA_Wait,2
+	PL_END
+
+.crack	move.l	#$2cc6c50d,d0
+	rts
+
+	
+Game_Version	dc.w	0
+	
+
 TAGLIST	dc.l	WHDLTAG_CUSTOM1_GET
 NOINTRO	dc.l	0
 	dc.l	WHDLTAG_CUSTOM2_GET
@@ -369,4 +423,20 @@ MODE	dc.l	0			: 1: 256 lines, 32 colors
 
 
 
+; ---------------------------------------------------------------------------
+; Support/helper routines.
 
+Fix_DMA_Wait
+	moveq	#8,d0
+
+; d0.w: number of raster lines to wait
+Wait_Raster_Lines
+	move.w	d1,-(a7)
+.loop	move.b	$dff006,d1
+.still_in_same_raster_line
+	cmp.b	$dff006,d1
+	beq.b	.still_in_same_raster_line	
+	subq.w	#1,d0
+	bne.b	.loop
+	move.w	(a7)+,d1
+	rts
