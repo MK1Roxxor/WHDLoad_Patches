@@ -21,6 +21,18 @@
 *** History			***
 ***********************************
 
+; 05-Jul-2023	- simpler approach for fixing the Rename() problem used:
+;		  _LVORename is directly patched in dos.library and WHDLoad
+;		  functions are used to implement that functionality, this
+;		  is done in 3 steps:
+;		  1. memory for files is allocated at the beginning
+;		  2. file to be renamed is loaded into memory allocated in 1.
+;		  3. file loaded to memory in 2. is saved with the new name
+;		- clicking "quit" icon works too now
+
+; 07-Mar-2020	- patched Rename() in load/save routines, not fully done yet
+;		- game crashes when clicking on quit icon, needs to be checked
+
 ; 07-May-2013	- work started
 
 
@@ -75,7 +87,7 @@ STACKSIZE	= 6000
 ;============================================================================
 
 slv_Version	= 17
-slv_Flags	= WHDLF_NoError|WHDLF_Examine
+slv_Flags	= WHDLF_NoError|WHDLF_Examine|WHDLF_ClearMem
 slv_keyexit	= $59	; F10
 
 ;============================================================================
@@ -97,7 +109,7 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"Debug!!! "
 		ENDC
-		dc.b	"Version 1.00 (07.05.2013)",0
+		dc.b	"Version 1.01 (05.07.2023)",0
 slv_config	dc.b	"C1:B:Skip Intro;"
 		dc.b	"C2:B:Unlimited Energy;"
 		dc.b	0
@@ -106,10 +118,33 @@ slv_config	dc.b	"C1:B:Skip Intro;"
 	IFD BOOTDOS
 
 _bootdos
+
+MAX_MAZE_SIZE	= 4096	; 4k should be fine, max. maze size is 2081 bytes
+
+
+	; Allocate memory for renaming files
+	move.l	#MAX_MAZE_SIZE,d0
+	moveq	#MEMF_PUBLIC,d1
+	move.l	$4.w,a6
+	jsr	_LVOAllocMem(a6)
+	lea	Temp_Memory(pc),a0
+	move.l	d0,(a0)
+	beq.w	QUIT
+
 	lea	_dosname(pc),a1
 	move.l	$4.w,a6
 	jsr	_LVOOldOpenLibrary(a6)
 	move.l	d0,a6
+
+
+	; Patch _LVORename in dos.library
+	lea	_LVORename(a6),a1
+	move.w	#$4ef9,(a1)
+	pea	RenamePatch(pc)
+	move.l	(a7)+,2(a1)
+
+
+
 
 	move.l	_resload(pc),a2
 	lea	TAGLIST(pc),a0
@@ -119,7 +154,7 @@ _bootdos
 	lea	.ix2(pc),a0
 	tst.l	ENERGYTRAINER-.ix2(a0)
 	bne.b	.trainerenabled
-	clr.w	PLTR-.ix2(a0)		; PLCMD_END
+	clr.w	PLGAME\.PLTR-.ix2(a0)		; PLCMD_END
 
 
 .trainerenabled
@@ -152,6 +187,7 @@ _bootdos
 	lea	.cmd(pc),a0
 	moveq	#.cmdlen,d0
 	jsr	4(a1)
+
 	move.l	d0,d6
 	movem.l	(a7)+,d7/a6
 	move.l	d7,d1
@@ -260,9 +296,37 @@ PLIX2	PL_START
 
 PLGAME	PL_START
 	PL_B	$73de,$60		; disable protection check
-PLTR	PL_B	$10562,$60		; unlimited energy
+.PLTR	PL_B	$10562,$60		; unlimited energy
 	PL_END
 
+
+
+; ----------------------------------------------------------------------
+; This is the _LVORename patch that is called whenever _LVORename() in
+; dos.library is called. File to be rename is loaded into temp. memory
+; and then saved with a new name.
+
+; d1; old name
+; d2: new name
+
+RenamePatch
+	movem.l	d1-a6,-(a7)
+	move.l	d1,a0
+	move.l	Temp_Memory(pc),a1
+	move.l	_resload(pc),a2
+	jsr	resload_LoadFile(a2)	; returns with file size in d0.l
+
+	move.l	d2,a0
+	move.l	Temp_Memory(pc),a1
+	jsr	resload_SaveFile(a2)	
+	movem.l	(a7)+,d1-a6
+	moveq	#0,d0			; no errors
+	rts
+
+
+Temp_Memory	dc.l	0
+
+; ----------------------------------------------------------------------
 
 
 
