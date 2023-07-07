@@ -21,6 +21,10 @@
 *** History			***
 ***********************************
 
+; 07-Jul-2023	- version check fixed (6 bytes too many were checked)
+;		- crash in NTSC mode on 68000 machines fixed (routine
+;		  _get_program_disk patched to always return success)
+
 ; 08-Mar-2013	- work started after reading a request in the WHDLoad
 ;		  mailing list
 ;		- manual protection completely skipped
@@ -122,7 +126,7 @@ _bootdos
 
 ; load game
 .dogame	moveq	#6,d0
-	moveq	#$62-0,d1
+	moveq	#$62-6,d1
 	lea	.game(pc),a0
 	lea	PT_GAME(pc),a1
 .go	bsr.b	.LoadAndPatch
@@ -272,18 +276,31 @@ EXIT	move.l	_resload(pc),a2
 
 
 ; format: checksum, offset to patch list
-PT_GAME	dc.w	$1b4f,PLGAME-PT_GAME	; SPS 891
+PT_GAME	dc.w	$18bb,PLGAME-PT_GAME	; SPS 891
 	dc.w	0			; end of tab
 
 
 PLGAME	PL_START
 	PL_L	$cc,$70014e75		; completely skip manual protection
+	PL_P	$9912,.Get_Program_Disk
 	PL_END
 
+
+; If game runs on 68000 machines and in NTSC mode and the "fonts" directory
+; is available, the original routine to check if the progam disk is inserted
+; will crash due to accessing a word at oddress (the "_Path_Attach" variable
+; is located at an odd address for some reason). To avoid this, the routine
+; has been patched to always return success, i.e. program disk is inserted. 
+
+.Get_Program_Disk
+	moveq	#1,d0
+	rts
 
 TAGLIST	dc.l	WHDLTAG_MONITOR_GET
 MON_ID	dc.l	0
 	dc.l	TAG_END
+
+Game_Name	dc.b	"Golf",0
 
 
 
