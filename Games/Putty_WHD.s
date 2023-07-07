@@ -153,7 +153,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.2A (07.07.2023)",0
+	dc.b	"Version 1.2B (07.07.2023)",0
 Name	dc.b	"SILLYPUTTY04",0
 HiName	dc.b	"Putty.high",0
 isPutty	dc.b	0			; 0: Silly Putty, $ff: Putty
