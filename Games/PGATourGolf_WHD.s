@@ -21,9 +21,6 @@
 *** History			***
 ***********************************
 
-; 27-May-2022	- version check corrected, game can now be played
-;		  in NTSC mode (issue #5401)
-
 ; 08-Mar-2013	- work started after reading a request in the WHDLoad
 ;		  mailing list
 ;		- manual protection completely skipped
@@ -102,7 +99,7 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"Version 1.02 (27.05.2022)",0
+		dc.b	"Version 1.00 (08.03.2013)",0
 		CNOP	0,4
 
 	IFD BOOTDOS
@@ -125,7 +122,7 @@ _bootdos
 
 ; load game
 .dogame	moveq	#6,d0
-	moveq	#$62-6,d1
+	moveq	#$62-0,d1
 	lea	.game(pc),a0
 	lea	PT_GAME(pc),a1
 .go	bsr.b	.LoadAndPatch
@@ -275,7 +272,7 @@ EXIT	move.l	_resload(pc),a2
 
 
 ; format: checksum, offset to patch list
-PT_GAME	dc.w	$18BB,PLGAME-PT_GAME	; SPS 891
+PT_GAME	dc.w	$1b4f,PLGAME-PT_GAME	; SPS 891
 	dc.w	0			; end of tab
 
 
