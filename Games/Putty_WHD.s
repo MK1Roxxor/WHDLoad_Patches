@@ -21,6 +21,9 @@
 *** History			***
 ***********************************
 
+; 07-Jul-2023	- 68000 quitkey did not work for Silly Putty (issue #6203)
+;		- ws_keydebug handling removed from keyboard interrupt
+
 ; 07-Dec-2014	- fixed unlimited pliability trainer for A600 version
 
 ; 06-Dec-2014	- A600 version now fully supported
@@ -89,7 +92,7 @@ HISCOREFLAG_SP		= BASEADDRESS_SP+$2b58
 ; version info:
 ; GBH re-release, retail, SPS 197: all the same version, with end sequence
 ; (animation), copylock on disk 1, track 1 on disk 2 is empty so RawDIC
-; imager wors with A600 version too
+; imager works with A600 version too
 ; Putty A600: no end sequence (just a picture), copylock on disk 2, track 1
 ; on disk 1 is empty so RawDIC imager still works
 
@@ -150,7 +153,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.2 (06.12.2014)",0
+	dc.b	"Version 1.2A (07.07.2023)",0
 Name	dc.b	"SILLYPUTTY04",0
 HiName	dc.b	"Putty.high",0
 isPutty	dc.b	0			; 0: Silly Putty, $ff: Putty
@@ -620,7 +623,19 @@ PL00	PL_START
 	PL_SA	$62e,$632		; don't store file length (a3 undefined)
 
 	PL_PS	$10b6,SaveHighscores
+
+	PL_PS	$3fa,.Enable_CIA_Interrupts
 	PL_END
+
+
+; Game disables CIA interrupts, quitkey does not work on 68000 due
+; to this.
+.Enable_CIA_Interrupts
+	move.b	#1<<7|1<<3,$bfed01		; enable keyboard interrupts
+	tst.b	$bfed01				; clear all CIA A interrupts
+	lea	$dff000,a0
+	rts
+
 
 SaveHighscores
 	move.l	HighscoreFlag(pc),a0	; adapted original code, clear
@@ -774,17 +789,6 @@ SetLev2IRQ
 
 
 	or.b	#1<<6,$e00(a1)			; set output mode
-
-
-
-	cmp.b	HEADER+ws_keydebug(pc),d0	
-	bne.b	.nodebug
-	movem.l	(a7)+,d0-d1/a0-a2
-	move.w	(a7),6(a7)			; sr
-	move.l	2(a7),(a7)			; pc
-	clr.w	4(a7)				; ext.l sr
-	bra.b	.debug
-
 
 .nodebug
 	cmp.b	HEADER+ws_keyexit(pc),d0
