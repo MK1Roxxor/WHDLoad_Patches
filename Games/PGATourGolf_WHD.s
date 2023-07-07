@@ -33,7 +33,6 @@
 	INCDIR	SOURCES:Include/
 	INCLUDE	whdload.i
 	INCLUDE	whdmacros.i
-	;INCLUDE	lvo/dos.i
 
 ; absolute skip
 PL_SA	MACRO
@@ -103,7 +102,7 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"Version 1.00 (08.03.2013)",0
+		dc.b	"Version 1.01 (07.07.2023)",0
 		CNOP	0,4
 
 	IFD BOOTDOS
@@ -299,9 +298,4 @@ PLGAME	PL_START
 TAGLIST	dc.l	WHDLTAG_MONITOR_GET
 MON_ID	dc.l	0
 	dc.l	TAG_END
-
-Game_Name	dc.b	"Golf",0
-
-
-
 
