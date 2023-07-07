@@ -102,7 +102,7 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"Version 1.01 (07.07.2023)",0
+		dc.b	"Version 1.02 (07.07.2023)",0
 		CNOP	0,4
 
 	IFD BOOTDOS
