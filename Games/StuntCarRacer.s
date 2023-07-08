@@ -1,7 +1,7 @@
 ;*---------------------------------------------------------------------------
 ; Program:	StuntCarRacer.s
 ; Contents:	Slave for "Stunt Car Racer" from Geoff Crammond/Microstyle
-; Author:	Codetapper of Action
+; Author:	Codetapper of Action, StingRay
 ; History:	14.01.97 - v1.0
 ; 		         - Only Quartex crack supported
 ;		         - Full load from HD
@@ -40,10 +40,16 @@
 ;		         - Slave optimised (due to one of the decryption keys being wrong)
 ;		         - Turbo text will no longer corrupt any pictures in the top left corner
 ;		         - Icon modifications
+;		08.07.23 - v1.4 (StingRay)
+;                        - Keyboard problems fixed (issue #3512)
+;                        - Slave code optimised and made pc-relative
+;                        - Source can be assembled with ASM-One/Pro (routine
+;                          _ToggleBoost had to be modified)
+;                        - WHDLoad v17+ features used (config) 
 ; Requires:	WHDLoad 10+
 ; Copyright:	Public Domain
 ; Language:	68000 Assembler
-; Translator:	Barfly 2.9
+; Translator:	Barfly 2.9, Asm-Pro 1.16d
 ; Info:		$7a61a = Fastest lap times
 ;		$7a71a = Fastest track times
 ;		At $5c8ca, game copies the blank time information into the
@@ -55,7 +61,7 @@
 ;		$59fe104b which is incorrect! Harry did it correctly!
 ;---------------------------------------------------------------------------*
 
-		INCDIR	Include:
+		INCDIR	SOURCES:Include/
 		INCLUDE	whdload.i
 		INCLUDE	whdmacros.i
 
@@ -73,7 +79,7 @@
 ;======================================================================
 
 _base		SLAVE_HEADER			;ws_Security + ws_ID
-		dc.w	10			;ws_Version
+		dc.w	17			;ws_Version
 		dc.w	WHDLF_EmulTrap|WHDLF_NoError	;ws_flags
 		dc.l	$80000			;ws_BaseMemSize
 		dc.l	0			;ws_ExecInstall
@@ -86,13 +92,23 @@ _expmem		dc.l	$1000			;ws_ExpMem
 		dc.w	_name-_base		;ws_name
 		dc.w	_copy-_base		;ws_copy
 		dc.w	_info-_base		;ws_info
+		dc.w	0			;ws_kickname
+		dc.l	0			;ws_kicksize
+		dc.w	0			;ws_kickcrc
+		dc.w	.config-_base		;ws_config
+
+
+.config		dc.b	"C1:B:Infinite Boost;"
+		dc.b	"C2:B:Turbo Mode;"
+		dc.b	"BW"
+		dc.b	0
 
 ;============================================================================
 
 _name		dc.b	"Stunt Car Racer",0
 _copy		dc.b	"1989 Geoff Crammond/Microstyle",0
-_info		dc.b	"Installed by Codetapper/Action!",10
-		dc.b	"Version 1.3 "
+_info		dc.b	"Installed by Codetapper/Action! & StingRay",10
+		dc.b	"Version 1.4 "
 		IFD	BARFLY
 		IFND	.passchk
 		DOSCMD	"WDate >T:date"
@@ -100,7 +116,7 @@ _info		dc.b	"Installed by Codetapper/Action!",10
 		ENDC
 		INCBIN	"T:date"
 		ELSE
-		dc.b	"(18.12.2004)"
+		dc.b	"(08.07.2023)"
 		ENDC
 		dc.b	-1,"Keys:   F6 - Toggle infinite boost   "
 		dc.b	10,"        F7 - Toggle turbo mode on/off"
@@ -123,7 +139,7 @@ _Start						;A0 = resident loader
 		move.l	a0,(a1)			;Save for later use
 
 _restart	move.l	_expmem(pc),a0		;Stack to fast memory
-		add.l	#$1000,a0
+		add.w	#$1000,a0
 		move.l	a0,sp
 
 		lea	_Tags(pc),a0		;Check parameters
@@ -144,13 +160,13 @@ _restart	move.l	_expmem(pc),a0		;Stack to fast memory
 _DiskVersion	move.l	#$2c00,d0		;Load initial file
 		move.l	#$9800,d1
 		moveq	#1,d2
-		lea	$59e8,a0
+		lea	$59e8.w,a0
 		move.l	a0,a5
 		move.l	_resload(pc),a2
 		jsr	resload_DiskLoad(a2)
 
 		cmp.l	#$6000007a,(a5)		;Check for the original
-		bne	_CrackedIntro
+		bne.b	_CrackedIntro
 
 		move.l	#$22b6,d0		;Length of encrypted data
 		move.l	#$d6d17a1e,d5		;Decrypt intro
@@ -179,7 +195,13 @@ _PL_Intro	PL_START
 		PL_W	$86,$0			;Black screen rather than red
 		PL_PS	$124,_PatchMain		;Patch before main game
 		PL_P	$570,_Loader		;Rob Northen loader
+		PL_PSS	$f8,.Enable_Level2_Interrupts,2
 		PL_END
+
+.Enable_Level2_Interrupts
+		bsr	Init_Level2_Interrupt
+		move.w	#$2100,sr
+		rts
 
 ;======================================================================
 
@@ -201,7 +223,7 @@ _RelocateMain	move.l	(a0)+,(a1)+
 		subq.l	#1,d0
 		bne.s	_RelocateMain
 
-		move.l	#($c9c>>2)-1,d0
+		move.w	#($c9c>>2)-1,d0
 		moveq	#0,d1
 _ClearLoop	move.l	d1,(a1)+
 		dbf	d0,_ClearLoop
@@ -211,13 +233,13 @@ _CrackedMain	bsr	_PicDelay
 _GameCommon	movem.l	d0-d1/a0-a2,-(sp)
 
 		move.l	_Custom1(pc),d0		;Check for initial infinite
-		tst.l	d0			;energy cheat
-		beq	_CheckStartTurb
+		;tst.l	d0			;energy cheat
+		beq.b	_CheckStartTurb
 		bsr	_RefreshBoost
 
 _CheckStartTurb	move.l	_Custom2(pc),d0		;Check for initial turbo
-		tst.l	d0			;mode
-		beq	_PatchGame
+		;tst.l	d0			;mode
+		beq.b	_PatchGame
 		bsr	_ToggleTurbo
 
 _PatchGame	lea	_PL_Game(pc),a0
@@ -267,9 +289,9 @@ _WinRace	move.b	#4,($1bb20).l		;Cheating bastard! :)
 ;======================================================================
 
 _RefreshBoost	cmp.b	#0,$1ca20
-		bne	_ToggleBoost
+		bne.b	_ToggleBoost
 		move.b	#$80,($1ca20).l		;Lame trainer
-_ToggleBoost	eor.l	#$65000008^$4e714e71,$60836
+_ToggleBoost	eor.l	#$65000008~$4e714e71,$60836
 		rts
 
 ;======================================================================
@@ -285,28 +307,28 @@ _ToggleTurbo	move.l	a0,-(sp)
 _CheckTurboMode	movem.l	d0/a0-a1,-(sp)		;Check for turbo mode which
 
 		move.b	_TurboFlag(pc),d0	;is at $5dac0 and $64516
-		tst.b	d0
-		beq	_NormalMode
+		;tst.b	d0
+		beq.b	_NormalMode
 
 		lea	$6a594,a1
-		bsr	_WriteTurboBMap
+		bsr.b	_WriteTurboBMap
 		lea	$72294,a1
-		bsr	_WriteTurboBMap
+		bsr.b	_WriteTurboBMap
 		movem.l	(sp)+,d0/a0-a1
 
 .BlitWait	btst	#6,$dff002		;At least wait for the blitter!
-		bne	.BlitWait
+		bne.b	.BlitWait
 		move.b	#0,$616d8		;Set the delay as ready
 		rts
 
 _NormalMode	lea	$6a594,a1
-		bsr	_ClearTurboBMap
+		bsr.b	_ClearTurboBMap
 		lea	$72294,a1
-		bsr	_ClearTurboBMap
+		bsr.b	_ClearTurboBMap
 		movem.l	(sp)+,d0/a0-a1
 
 .Wait		tst.b	($616d8).l		;$4a39000616d8
-		bne	.Wait			;$6600fff8
+		bne.b	.Wait			;$6600fff8
 		rts
 
 ;======================================================================
@@ -314,7 +336,7 @@ _NormalMode	lea	$6a594,a1
 _WriteTurboBMap	lea	_TurboText(pc),a0	;Paste TURBO writing into
 		move.l	(a0)+,d0		;the bitmap
 		cmp.l	#$fff3f3f,4(a1)		;Only paste during game when
-		bne	_Rts			;the car frame is showing
+		bne.b	_Rts			;the car frame is showing
 		or.l	d0,(a1)
 		move.l	(a0)+,d0
 		or.l	d0,40(a1)
@@ -327,7 +349,7 @@ _WriteTurboBMap	lea	_TurboText(pc),a0	;Paste TURBO writing into
 _Rts		rts
 
 _ClearTurboBMap	cmp.l	#$fff3f3f,4(a1)
-		bne	_Rts
+		bne.b	_Rts
 		and.l	#$ff,(a1)		;Clear TURBO writing from
 		and.l	#$ff,40(a1)		;the bitmap
 		and.l	#$ff,80(a1)
@@ -339,9 +361,9 @@ _ClearTurboBMap	cmp.l	#$fff3f3f,4(a1)
 
 _24Bit_SwpMv_D0	swap	d0			;Stolen code
 		move.w	#$FFFF,d0
-		bra	_24Bit_Fix_A0
+		bra.b	_24Bit_Fix_A0
 
-_24Bit_Add_2_A0	bsr	_24Bit_Fix_A0
+_24Bit_Add_2_A0	bsr.b	_24Bit_Fix_A0
 		addq.l	#2,a0			;Stolen code
 		rts
 
@@ -355,7 +377,7 @@ _24Bit_Fix_A0	move.l	d0,-(sp)		;Fix 24 bit A0 bug
 ;======================================================================
 
 _SkipPlayerName	cmpi.b	#' ',(1,a0,d0.w)
-		bne.w	.NotBlankName
+		bne.b	.NotBlankName
 		movem.l	d0/d1/a0/a1,-(sp)
 		movea.l	a0,a1
 		lea	_PlayerName(pc),a0
@@ -371,13 +393,13 @@ _SkipPlayerName	cmpi.b	#' ',(1,a0,d0.w)
 _Keybd		ror.b	#1,d0			;Stolen 6 bytes
 		eor.b	#$ff,d0
 		cmp.b	_keyexit(pc),d0
-		beq	_exit
-		cmp.b	#$55,d0			;F6 = Refresh boots
-		beq	_RefreshBoost
+		beq.w	_exit
+		cmp.b	#$55,d0			;F6 = Refresh boost
+		beq.w	_RefreshBoost
 		cmp.b	#$56,d0			;F7 = Switch turbo on/off
-		beq	_ToggleTurbo
+		beq.w	_ToggleTurbo
 		cmp.b	#$5f,d0			;Help = Win the race!
-		beq	_WinRace
+		beq.w	_WinRace
 		rts
 
 ;======================================================================
@@ -403,9 +425,9 @@ _Loader		movem.l	d1-d4/a0-a3,-(sp)
 		mulu	#$200,d1		;d1 = Offset
 		mulu	#$200,d2		;d2 = Length
 		cmp.l	#$dc00,d1		;Initial game load
-		beq	_DiskLoad
+		beq.b	_DiskLoad
 		cmp.l	#$a00,d1		;When game starts, it loads this
-		beq	_TimesLoad
+		beq.b	_TimesLoad
 
 		move.l	d2,d0			;d0 = Length
 		move.l	a0,a1			;a1 = Source
@@ -414,21 +436,21 @@ _Loader		movem.l	d1-d4/a0-a3,-(sp)
 		move.l	d1,d4
 		add.l	d0,d4			;d4 = Minimum file size required
 		cmp.w	#1,d3			;0 = read, 1 = write
-		beq	_Save
+		beq.b	_Save
 
 		move.l	(a3),d3			;Check that the load operation
 		cmp.l	d4,d3			;will work
-		blt	_DiskOpDone
+		blt.b	_DiskOpDone
 
 		jsr	resload_LoadFileOffset(a2)
-		bra	_DiskOpDone
+		bra.b	_DiskOpDone
 
 _Save		jsr	resload_SaveFileOffset(a2)
 
 		cmp.l	(a3),d4
-		blt	_DiskOpDone
+		blt.b	_DiskOpDone
 		move.l	d4,(a3)			;Save new file length
-		bra	_DiskOpDone
+		bra.b	_DiskOpDone
 
 _DiskLoad	move.l	d1,d0			;d0 = offset (bytes)
 		move.l	d2,d1			;d1 = length (bytes)
@@ -448,10 +470,10 @@ _TimesLoad	move.l	a0,a1			;a1 = Source
 		movem.l	(sp)+,d0-d1/a0-a1
 		
 		cmp.l	#$200,d3
-		bne	_DiskOpDone
+		bne.b	_DiskOpDone
 
 		jsr	resload_LoadFile(a2)
-		bra	_DiskOpDone
+		bra.b	_DiskOpDone
 
 ;======================================================================
 
@@ -476,8 +498,8 @@ _Decrypt	movem.l	d0/d5-d7/a0,-(sp)	;Rob Northen Decryption (3 Key)
 
 _PicDelay	movem.l	d0-d1/a0-a2,-(sp)	;Show title pic until the
 		move.l	_ButtonWait(pc),d0	;user hits a button if
-		tst.l	d0			;the buttonwait tooltype
-		beq	_ButtonWaitDone		;was set
+		;tst.l	d0			;the buttonwait tooltype
+		beq.b	_ButtonWaitDone		;was set
 		lea	$bfe001,a0
 _WaitButton	btst	#6,(a0)
 		beq.s	_ButtonWaitDone
@@ -496,13 +518,13 @@ _TurboText	dc.l	$F4B9C600		;This 32x5 bitmap says TURBO
 
 ;======================================================================
 
-_TNTVersion	lea	$1000,a1
+_TNTVersion	lea	$1000.w,a1
 		move.l	a1,a5
 		move.l	_resload(pc),a2
 		jsr	resload_LoadFileDecrunch(a2)
 
 		cmp.l	#$e700,$28e(a5)		;Check for right version
-		bne	_DiskVersion
+		bne.w	_DiskVersion
 
 		move.l	a5,a0
 		sub.l	a1,a1
@@ -524,16 +546,16 @@ _PL_TNTIntro	PL_START
 		PL_END
 
 _TNTSpecific	move.l	#$00020113,$2b986	;Correct colours on preview from reds->blues
-		bra	_GameCommon		;(starts at $2b974 - called at $5d228)
+		bra.w	_GameCommon		;(starts at $2b974 - called at $5d228)
 
 ;======================================================================
 
 _CopyTNTPatch	move.l	_expmem(pc),a1		;Copy the patches to
 		movea.l	a1,a2			;fast memory
-		move.l	#$9c0>>2,d7
+		move.w	#$9c0>>2,d7
 .CopyTNTLoop	move.l	(a0)+,(a1)+
 		dbra	d7,.CopyTNTLoop
-		bsr	_FlushCache
+		bsr.b	_FlushCache
 		jmp	(a2)
 
 ;======================================================================
@@ -563,9 +585,68 @@ _Custom2	dc.l	0
 _SaveFileSize	dc.l	0
 ;======================================================================
 
-_exit		pea	TDREASON_OK
-		bra	_end
-_debug		pea	TDREASON_DEBUG
-_end		move.l	(_resload),-(a7)
-		add.l	#resload_Abort,(a7)
+_exit		pea	(TDREASON_OK).w
+		bra.b	_end
+_debug		pea	(TDREASON_DEBUG).w
+_end		move.l	(_resload,pc),-(a7)
+		addq.l	#resload_Abort,(a7)
 		rts
+;======================================================================
+
+Init_Level2_Interrupt
+	pea	.int(pc)
+	move.l	(a7)+,$68.w
+
+	move.b	#1<<7|1<<3,$bfed01		; enable keyboard interrupts
+	tst.b	$bfed01				; clear all CIA A interrupts
+	and.b	#~(1<<6),$bfee01		; set input mode
+
+	move.w	#1<<3,$dff09c			; clear ports interrupt
+	move.w	#1<<15|1<<14|1<<3,$dff09a	; and enable it
+	rts
+
+.int	movem.l	d0-d1/a0-a2,-(a7)
+	lea	$dff000,a0
+	lea	$bfe001,a1
+
+	btst	#3,$1e+1(a0)			; PORTS irq?
+	beq.b	.end
+
+	btst	#3,$d00(a1)			; KBD irq?
+	beq.b	.end
+
+	moveq	#0,d0
+	move.b	$bfec01-$bfe001(a1),d0
+	not.b	d0
+	ror.b	d0
+	or.b	#1<<6,$e00(a1)			; set output mode
+
+	bsr.b	Check_Quit_Key
+	
+	moveq	#3,d0
+	bsr.b	Wait_Raster_Lines
+
+	and.b	#~(1<<6),$e00(a1)	; set input mode
+.end	move.w	#1<<3,$9c(a0)
+	move.w	#1<<3,$9c(a0)		; twice to avoid a4k hw bug
+	movem.l	(a7)+,d0-d1/a0-a2
+	rte
+
+
+Check_Quit_Key
+	cmp.b	_base+ws_keyexit(pc),d0
+	beq.w	_exit
+	rts	
+
+
+; d0.w: number of raster lines to wait
+Wait_Raster_Lines
+	move.w	d1,-(a7)
+.loop	move.b	$dff006,d1
+.still_in_same_raster_line
+	cmp.b	$dff006,d1
+	beq.b	.still_in_same_raster_line	
+	subq.w	#1,d0
+	bne.b	.loop
+	move.w	(a7)+,d1
+	rts
