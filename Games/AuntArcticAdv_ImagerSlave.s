@@ -21,6 +21,8 @@
 ** History			***
 ***********************************
 
+; 10-Jul-2023	- support for TopShots version added
+
 ; 30-Oct-2017	- work started
 
 
@@ -31,14 +33,14 @@
 	SLAVE_HEADER
 	dc.b	1		; Slave version
 	dc.b	0		; Slave flags
-	dc.l	.disk1		; Pointer to the first disk structure
+	dc.l	.disk1_TopShots	; Pointer to the first disk structure
 	dc.l	.text		; Pointer to the text displayed in the imager window
 
 
 	dc.b	"$VER: "
-.text	dc.b	"Aunt Arctic Adventure imager V1.0",10
+.text	dc.b	"Aunt Arctic Adventure imager V1.1",10
 	dc.b	"by StingRay/[S]carab^Scoopex "
-	dc.b	"(30.10.2017)",0
+	dc.b	"(10.07.2023)",0
 	CNOP	0,4
 
 
@@ -54,6 +56,22 @@
 	dc.l	0		; Called before a disk is read
 	dc.l	0		; Called after a disk has been read
 
+.disk1_TopShots
+	dc.l	0		; Pointer to next disk structure
+	dc.w	1		; Disk structure version
+	dc.w	0		; Disk flags
+	dc.l	.tracks_TopShots; List of tracks which contain data
+	dc.l	0		; UNUSED, ALWAYS SET TO 0!
+	dc.l	FL_DISKIMAGE	; List of files to be saved
+	dc.l	.CRC		; Table of certain tracks with CRC values
+	dc.l	.disk1		; Alternative disk structure, if CRC failed
+	dc.l	0		; Called before a disk is read
+	dc.l	0		; Called after a disk has been read
+
+
+.CRC	CRCENTRY	000,$241B
+	CRCEND
+
 .tracks	TLENTRY	002,003,$1770,$a425,DecodeTrack
 	TLENTRY	004,013,$1770,$a425,DMFM_NULL
 	TLENTRY	014,073,$1770,$a425,DecodeTrack
@@ -63,7 +81,9 @@
 	TLENTRY	120,159,$1770,$a425,DecodeTrack
 	TLEND
 
-
+.tracks_TopShots
+	TLENTRY	000,159,$1600,SYNC_STD,DMFM_STD
+	TLEND
 
 
 ; d0.w: track number
