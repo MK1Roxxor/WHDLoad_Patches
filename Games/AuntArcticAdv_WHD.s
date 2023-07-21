@@ -21,6 +21,9 @@
 *** History			***
 ***********************************
 
+; 21-Jul-2023	- level skip now works correctly for the very last level
+;		  of the game (issue #6207)
+
 ; 10-Jul-2023	- CPU dependent delay for title picture (Top Shots) fixed
 ;		- another CPU dependent delay loop fixed
 ;		- in-game keys added to the WHDLoad splash screen
@@ -61,6 +64,8 @@
 FLAGS		= WHDLF_NoError|WHDLF_ClearMem|WHDLF_EmulTrap
 QUITKEY		= $59		; F10
 ;DEBUG
+
+LAST_LEVEL	= 50
 
 RAWKEY_E	= $12
 RAWKEY_N	= $36
@@ -118,7 +123,7 @@ HEADER	SLAVE_HEADER			; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG (do NOT release!) "
 	ENDC
-	dc.b	"Version 2.00 (10.07.2023)",10
+	dc.b	"Version 2.01 (21.07.2023)",10
 	dc.b	10
 	dc.b	"In-Game Keys:",10
 	dc.b	"1/2: Toggle unlimited Lives Player 1/2",10
@@ -300,7 +305,14 @@ PL_ORIGINAL_GAME_VERSION
 	dc.w	0
 
 .Skip_Level
-	move.w	#1,$6de90+$b19a
+	moveq	#1,d0
+	cmp.w	#LAST_LEVEL,$6de90+$ac14
+	bne.b	.Game_Not_Complete
+	move.w	d0,$6de90+$289a		; game complete
+	moveq	#0,d0			; do not set level complete
+
+.Game_Not_Complete
+	move.w	d0,$6de90+$b19a		; level complete
 	rts
 
 .Toggle_Invincibility
@@ -421,7 +433,14 @@ PL_TOPSHOTS_GAME_VERSION
 	dc.w	0
 
 .Skip_Level
-	move.w	#1,$6de00+$b2d0
+	moveq	#1,d0
+	cmp.w	#LAST_LEVEL,$6de00+$ad4a
+	bne.b	.Game_Not_Complete
+	move.w	d0,$6de00+$292a		; game complete
+	moveq	#0,d0			; do not set level complete
+
+.Game_Not_Complete
+	move.w	d0,$6de00+$b2d0		; level complete
 	rts
 
 .Toggle_Invincibility
