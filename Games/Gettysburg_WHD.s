@@ -21,6 +21,8 @@
 *** History			***
 ***********************************
 
+; 14-Aug-2023	- another version supported (issue #6227)
+
 ; 24-Mar-2013	- work started
 ;		- and finished some minutes later, not much to do here
 
@@ -98,7 +100,7 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"Version 1.00 (24.03.2013)",0
+		dc.b	"Version 1.01 (14.08.2023)",0
 		CNOP	0,4
 
 slv_config	dc.b	0
@@ -126,11 +128,24 @@ _bootdos
 
 	
 ; load game
-.dogame	move.l	#$360,d0
+	lea	Game_Name_V2(pc),a0
+	bsr	File_Exists
+	tst.l	d0
+	beq.b	.Try_V1
+	move.l	#$360,d0
+	move.l	#$464-$360,d1
+	lea	PT_GAME_V2(pc),a1
+	bra.b	.Patch_Game	
+
+
+
+.Try_V1	move.l	#$360,d0
 	move.l	#$464-$360,d1
 	lea	.game(pc),a0
 	lea	PT_GAME(pc),a1
-.go	bsr.b	.LoadAndPatch
+
+.Patch_Game
+	bsr.b	.LoadAndPatch
 
 .run	move.l	d7,d1
 	moveq	#.arglen,d0
@@ -274,12 +289,21 @@ EXIT	move.l	_resload(pc),a2
 PT_GAME	dc.w	$c7bb,PLGAME-PT_GAME	; SPS 1937
 	dc.w	0			; end of tab
 
+PT_GAME_V2
+	dc.w	$c7bb,PLGAME_V2-PT_GAME_V2	; 
+	dc.w	0				; end of tab
 
 PLGAME	PL_START
-	PL_PS	$347fc,.stack
+	PL_PS	$347fc,Set_Stack
 	PL_END
 
-.stack	sub.l	#6000,d0
+PLGAME_V2
+	PL_START
+	PL_PS	$34dce,Set_Stack
+	PL_END
+
+Set_Stack
+	sub.l	#6000,d0
 	addq.l	#8,d0
 	rts
 
@@ -290,4 +314,21 @@ TAGLIST	dc.l	TAG_END
 
 
 
+Game_Name_V2	dc.b	"civilwar",0
+		CNOP	0,2
 
+
+; ---------------------------------------------------------------------------
+; Support/helper routines.
+
+; a0.l: file name
+; -----
+; d0.l: result (0: file does not exist) 
+
+File_Exists
+	movem.l	d1-a6,-(a7)
+	move.l	_resload(pc),a2
+	jsr	resload_GetFileSize(a2)
+	tst.l	d0
+	movem.l	(a7)+,d1-a6
+	rts
