@@ -19,6 +19,10 @@
 *** HISTORY					***
 ***************************************************
 
+; 14-Aug-2023	- patch works on 68000 now (issue #6225)
+;		- delay in keyboard interrupt fixed
+;		; ws_keydebug handling removed from keyboard interrupt
+
 ; 27-Aug-2oo8	- touched again after a long time
 ;		  (thanks to New Zealand's best...)
 ;		- keyboard interrupt added so quit is possible on 68000
@@ -66,7 +70,7 @@ HEADER	SLAVE_HEADER			; ws_Security + ws_ID
 .name	dc.b	"Book of Songs",0
 .copy	dc.b	"1992 Complex",0
 .info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
-	dc.b	"Version 1.00 (27.08.08)",0
+	dc.b	"Version 1.01 (14.08.2023)",0
 .dir	;dc.b	"sources:fixes/demos/book_of_songs/"
 	dc.b	"files",0
 	CNOP	0,2
@@ -445,8 +449,23 @@ resload	dc.l	0			; address of resident loader
 ; a1: destination address
 
 LOADER	movem.l	d0-d6/a0-a6,-(a7)
-	move.l	(a0),d0
-	or.l	#$20202020,d0
+	moveq	#" ",d1
+	move.b	(a0),d0
+	or.b	d1,d0
+	lsl.l	#8,d0
+
+	move.b	1(a0),d0
+	or.b	d1,d0
+	lsl.l	#8,d0
+
+	move.b	2(a0),d0
+	or.b	d1,d0
+	lsl.l	#8,d0
+
+	move.b	3(a0),d0
+	or.b	d1,d0
+	
+
 	cmp.l	#"file",d0
 	bne.b	.skip
 	addq.w	#6,a0
@@ -490,16 +509,6 @@ SetLev2IRQ
 	or.b	#1<<6,$e00(a1)			; set output mode
 
 
-	cmp.b	HEADER+ws_keydebug(pc),d0	
-	bne.b	.nodebug
-	movem.l	(a7)+,d0-d1/a0-a1
-	move.w	(a7),6(a7)			; sr
-	move.l	2(a7),(a7)			; pc
-	clr.w	4(a7)				; ext.l sr
-	bra.b	.debug
-
-
-.nodebug
 	cmp.b	HEADER+ws_keyexit(pc),d0
 	beq.b	.exit
 	
@@ -507,7 +516,7 @@ SetLev2IRQ
 	moveq	#3-1,d1
 .loop	move.b	$6(a0),d0
 .wait	cmp.b	$6(a0),d0
-	bne.b	.wait
+	beq.b	.wait
 	dbf	d1,.loop
 
 
@@ -517,7 +526,6 @@ SetLev2IRQ
 	movem.l	(a7)+,d0-d1/a0-a1
 	rte
 
-.debug	pea	(TDREASON_DEBUG).w
 .quit	move.l	resload(pc),-(a7)
 	addq.l	#resload_Abort,(a7)
 	rts
