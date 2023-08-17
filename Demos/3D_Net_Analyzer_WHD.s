@@ -21,6 +21,10 @@
 *** History			***
 ***********************************
 
+; 17-Aug-2023	- level 3 interrupt vector is now initialised before
+;		  starting the demo (issue #6222)
+;		- ws_keydebug handling removed from keyboard interrupt
+
 ; 18-Aug-2015	- some unused/not needed code removed
 ;		- directory name wasn't null-terminated in non DEBUG mode
 
@@ -40,6 +44,7 @@
 
 	INCDIR	SOURCES:INCLUDE/
 	INCLUDE	WHDLoad.i
+	INCLUDE	hardware/intbits.i
 	
 
 FLAGS		= WHDLF_NoError|WHDLF_EmulTrap|WHDLF_ClearMem
@@ -79,7 +84,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"Debug!!! "
 	ENDC
-	dc.b	"Version 1.00 (18.08.2015)",0
+	dc.b	"Version 1.01 (17.08.2023)",0
 FileName	dc.b	"6",0
 	CNOP	0,2
 
@@ -127,6 +132,12 @@ Patch	lea	resload(pc),a1
 	moveq	#0,d0			; new status: I+D cache off
 .on	move.l	d0,d1			; status to change
 	jsr	resload_SetCACR(a2)
+
+
+	; Initialise level 3 interrupt vector
+	pea	Acknowledge_Level3_Interrupt(pc)
+	move.l	(a7)+,$6c.w
+	
 
 ; and start
 	jmp	(a5)
@@ -243,16 +254,6 @@ Lev2	movem.l	d0-d1/a0-a2,-(a7)
 	or.b	#1<<6,$e00(a1)			; set output mode
 
 
-	cmp.b	HEADER+ws_keydebug(pc),d0	
-	bne.b	.nodebug
-	movem.l	(a7)+,d0-d1/a0-a2
-	move.w	(a7),6(a7)			; sr
-	move.l	2(a7),(a7)			; pc
-	clr.w	4(a7)				; ext.l sr
-	bra.b	.debug
-
-
-.nodebug
 	cmp.b	HEADER+ws_keyexit(pc),d0
 	beq.b	.exit
 	
@@ -271,12 +272,10 @@ Lev2	movem.l	d0-d1/a0-a2,-(a7)
 	movem.l	(a7)+,d0-d1/a0-a2
 	rte
 
-.debug	pea	(TDREASON_DEBUG).w
+.exit	pea	(TDREASON_OK).w
 .quit	move.l	resload(pc),-(a7)
 	addq.l	#resload_Abort,(a7)
 	rts
-.exit	pea	(TDREASON_OK).w
-	bra.b	.quit
 
 
 Key	dc.b	0
@@ -410,3 +409,9 @@ BK_DECRUNCH
 	rts
 
 
+; ---------------------------------------------------------------------------
+
+Acknowledge_Level3_Interrupt
+	move.w	#INTF_COPER|INTF_BLIT|INTF_VERTB,$dff09c
+	move.w	#INTF_COPER|INTF_BLIT|INTF_VERTB,$dff09c
+	rte	
