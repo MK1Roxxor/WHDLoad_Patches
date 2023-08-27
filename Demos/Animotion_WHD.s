@@ -21,6 +21,9 @@
 *** History			***
 ***********************************
 
+; 16-AUg-2023	- interrupt vectors (level 3 and level 6) are now
+;		  initialised before starting the demo (issue #6223)
+
 ; 14-Mar-2016	- illegal out of bounds blit fixed, 7 more blitter waits
 ;		  added
 ;		- unused replayer patches removed
@@ -29,6 +32,7 @@
 
 	INCDIR	SOURCES:INCLUDE/
 	INCLUDE	WHDLoad.i
+	INCLUDE	hardware/intbits.i
 	
 
 FLAGS		= WHDLF_NoError|WHDLF_ClearMem|WHDLF_EmulTrap
@@ -86,7 +90,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.01 (14.03.2016)",10
+	dc.b	"Version 1.02 (16.08.2023)",10
 	dc.b	10
 	dc.b	"Greetings to Frequent :)",0
 Name	dc.b	"Animotion",0
@@ -143,6 +147,14 @@ Patch	lea	resload(pc),a1
 	bsr.b	.patch
 .is68k
 	move.w	#30,$300.w
+
+
+	; initialise interrupt vectors
+	pea	Acknowledge_Level6_Interrupt(pc)
+	move.l	(a7)+,$78.w
+	pea	Acknowledge_Level3_Interrupt(pc)
+	move.l	(a7)+,$6c.w
+
 
 ; and start
 	jmp	(a5)
@@ -499,4 +511,16 @@ lbC000132
 	roxl.l	#1,d2
 	dbf	d1,.getbits
 	rts
+
+; ---------------------------------------------------------------------------
+
+Acknowledge_Level6_Interrupt
+	move.w	#INTF_EXTER,$dff09c
+	move.w	#INTF_EXTER,$dff09c
+	rte
+
+Acknowledge_Level3_Interrupt
+	move.w	#INTF_COPER|INTF_BLIT|INTF_VERTB,$dff09c
+	move.w	#INTF_COPER|INTF_BLIT|INTF_VERTB,$dff09c
+	rte	
 
