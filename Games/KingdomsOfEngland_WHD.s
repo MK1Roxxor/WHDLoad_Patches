@@ -21,6 +21,8 @@
 *** History			***
 ***********************************
 
+; 31-Aug-2023	- special case code for "boot" file handling fixed
+
 ; 30-Aug-2023	- special case code for "boot" file added
 ;		- disk change code removed, simply using 2 drives now
 ;		- patch is finished for now
@@ -56,7 +58,7 @@ BOOTBLOCK
 ;CBDOSLOADSEG
 ;CBDOSREAD
 ;CACHE
-DEBUG
+;DEBUG
 DISKSONBOOT
 ;DOSASSIGN
 FONTHEIGHT     = 8
@@ -90,7 +92,7 @@ slv_info	dc.b	"installed and fixed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"Version 1.00 (30.08.2023)",0
+		dc.b	"Version 1.01 (31.08.2023)",0
 slv_config	dc.b	0
 
 	CNOP	0,4
@@ -178,7 +180,7 @@ PLBASE	PL_START
 	bne.b	.no_boot
 	cmp.b	#"t",3(a0)
 	bne.b	.no_boot
-	cmp.l	#$bfd100,$24+2(a1)
+	cmp.l	#$bfd100,$4+2(a1)
 	bne.b	.Run_Part
 .no_boot	
 
