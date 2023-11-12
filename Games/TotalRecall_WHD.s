@@ -21,6 +21,14 @@
 *** History			***
 ***********************************
 
+; 12-Nov-2023	- all trainer options implemented
+;		- last level was not loaded correctly (loader patch and
+;		  decruncher patch needed to be fixed to handle file "19"
+;		  correctly)
+;		- this update is now finished!
+
+; 11-Nov-2023	- started to implement trainer options (issue #6264)
+
 ; 03-Jan-2016	- blitter waits added (68010+ only)
 ;		- ATOM decrunche relocated
 ;		- interrupts fixed
@@ -34,12 +42,22 @@
 
 	INCDIR	SOURCES:INCLUDE/
 	INCLUDE	WHDLoad.i
+	INCLUDE	exec/types.i
 	
+	; Trainer options
+	BITDEF	TR,UNLIMITED_CREDITS,1
+	BITDEF	TR,UNLIMITED_ENERGY,2
+	BITDEF	TR,UNLIMITED_AMMO,3
+	BITDEF	TR,IN_GAME_KEYS,4
 
 FLAGS		= WHDLF_NoError|WHDLF_ClearMem|WHDLF_EmulTrap
 DEBUGKEY	= $58		; F9
 QUITKEY		= $59		; F10
 ;DEBUG
+
+RAWKEY_E	= $12
+RAWKEY_N	= $36
+RAWKEY_A	= $20
 
 ; absolute skip
 PL_SA	MACRO
@@ -53,7 +71,7 @@ PL_PSA	MACRO
 	ENDM
 
 HEADER	SLAVE_HEADER		; ws_security + ws_ID
-	dc.w	10		; ws_version
+	dc.w	17		; ws_version
 	dc.w	FLAGS		; flags
 	dc.l	524288		; ws_BaseMemSize
 	dc.l	0		; ws_ExecInstall
@@ -68,15 +86,19 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	dc.w	.info-HEADER	; ws_info
 
 ; v16
-;	dc.w	0		; ws_kickname
-;	dc.l	0		; ws_kicksize
-;	dc.w	0		; ws_kickcrc
-;
-;; v17
-;	dc.w	.config-HEADER	; ws_config
+	dc.w	0		; ws_kickname
+	dc.l	0		; ws_kicksize
+	dc.w	0		; ws_kickcrc
+
+; v17
+	dc.w	.config-HEADER	; ws_config
 
 
-.config	dc.b	0
+.config	dc.b 	"C1:X:Unlimited Energy:",TRB_UNLIMITED_ENERGY+"0",";"
+	dc.b	"C1:X:Unlimited Ammo:",TRB_UNLIMITED_AMMO+"0",";"
+	dc.b	"C1:X:Unlimited Credits:",TRB_UNLIMITED_CREDITS+"0",";"
+	dc.b	"C1:X:In-Game Keys:",TRB_IN_GAME_KEYS+"0",";"
+	dc.b	0
 
 .dir	IFD	DEBUG
 	dc.b	"SOURCES:WHD_Slaves/TotalRecall/"
@@ -88,7 +110,11 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.1 (02.01.2016)",0
+	dc.b	"Version 1.2 (12.11.2023)",-1
+	dc.b	"In-Game Keys:",10
+	dc.b	"A: Refresh Ammo   E: Refresh Energy",10
+	dc.b	"N: Skip Level",0
+
 Name	dc.b	"Recall.prg",0
 	CNOP	0,2
 
@@ -251,7 +277,7 @@ PLGAME	PL_START
 .noblit23
 	movem.l	(a7)+,d0-a6
 	rts
-	
+
 
 
 .patchmain
@@ -325,31 +351,129 @@ PL0001	PL_START
 	PL_PSS	$3948,.ackVBI,2
 	PL_P	$1066,FixVolume		; fix byte write to volume register
 	PL_P	$1cd6,FixVolume		; fix byte write to volume register
-	PL_PSS	$332c,.setkbd,4
+	PL_PSS	$332c,.Set_Keyboard_Routine,4
 	;PL_P	$9b56,SaveHighscores	; doesn't work yet!
+
+	PL_IFC1X	TRB_UNLIMITED_ENERGY
+	PL_W	$19ca+2,0
+	PL_W	$23a4+2,0
+	PL_W	$4254+2,0
+	PL_W	$432c+2,0
+	PL_W	$4404+2,0
+	PL_R	$4a48
+	PL_B	$528e,$4a
+	PL_W	$56e4+2,0
+	PL_W	$5732+2,0
+	PL_W	$5788+2,0
+	PL_B	$626c,$4a
+	PL_ENDIF
+
+	
+	PL_IFC1X	TRB_UNLIMITED_AMMO
+	PL_B	$1dc4,$4a
+	PL_B	$1e2c,$4a
+	PL_B	$2662,$4a
+	PL_B	$26b4,$4a
+	PL_W	$4a30+2,0
+	PL_ENDIF
+
+
+	PL_IFC1X	TRB_UNLIMITED_CREDITS
+	PL_B	$135e,$4a
+	PL_ENDIF
+
+	PL_IFC1X	TRB_IN_GAME_KEYS
+	PL_PSS	$332c,.Set_Keyboard_Routine_Trainer,4
+	PL_ENDIF
 	PL_END
 
-.setkbd	lea	.kbdcust(pc),a0
-	move.l	a0,KbdCust-.kbdcust(a0)
+
+.Set_Keyboard_Routine_Trainer
+	pea	.Keyboard_Routine_Trainer(pc)
+	bra.w	Set_Keyboard_Custom_Routine
+
+.Keyboard_Routine_Trainer
+	lea	.In_Game_Keys(pc),a0
+	bsr	Handle_Keys
+	bra.w	.Handle_Normal_Keys
+
+.In_Game_Keys
+	dc.w	RAWKEY_N,.Skip_Level-.In_Game_Keys
+	dc.w	RAWKEY_A,.Refresh_Ammo-.In_Game_Keys
+	dc.w	RAWKEY_E,.Refresh_Energy-.In_Game_Keys
+	dc.w	0
+	
+
+.Skip_Level
+	move.w	$1002.w,d0
+	cmp.w	#4,d0
+	bcc.b	.Set_Level_Complete_Status
+	add.w	d0,d0
+	add.w	d0,d0
+	jmp	.Set_Level_Complete(pc,d0.w)
+
+.Set_Level_Complete_Status
+	move.b	#3,$1400+$eabd
 	rts
 
-.kbdcust
+.Set_Level_Complete
+	bra.w	.Set_Level_Complete1
+	bra.w	.Set_Level_Complete2
+	bra.w	.Set_Level_Complete3
+	bra.w	.Set_Level_Complete4
+	;bra.w	.Set_Level_Complete5
+	;bra.w	.Set_Level_Complete6
 
-	IFD	DEBUG
-	move.b	RawKey(pc),d0
-	cmp.b	#$35,d0			; N - skip level
-	bne.b	.noN
-	move.b	#3,$1400+$eabd
-.noN
+.Set_Level_Complete1
+	move.w	#$180,$1400+$e794
+	move.w	#$fe0,$1400+$e796
+	move.w	#$110,$1400+$364a8
+	clr.w	$1400+$e894
+	rts
+	
 
-	cmp.b	#$33,d0			; C - enable in-game cheat
-	bne.b	.noC
-	move.w	#1,$100e
-.noC
+.Set_Level_Complete2
+	move.w	#$40,$1400+$e796
+	move.w	#$170,$1400+$e794
+	rts
 
-	ENDC
+.Set_Level_Complete3
+	move.w	#$43e,$1400+$e796
+	move.w	#$280,$1400+$e794
+	rts
+
+.Set_Level_Complete4
+	move.w	#$da0,$1400+$e796
+	move.w	#$210,$1400+$e794
+	rts
+
+;.Set_Level_Complete5
+;	move.w	#1,$201a.w
+;	move.w	#$240,$1400+$e794
+;	rts
+;
+;.Set_Level_Complete6
+;	move.w	#3,$201a.w
+;	rts
 
 
+.Refresh_Ammo
+	move.w	#99,$1008.w		; max. ammo
+	st	$1400+$e890		; update ammo status
+	rts
+
+.Refresh_Energy
+	move.w	#$6a,$1400+$e888
+	st	$1400+$e88c		; update energy status	
+	rts
+
+
+.Set_Keyboard_Routine
+	pea	.Handle_Normal_Keys(pc)
+	bra.w	Set_Keyboard_Custom_Routine
+
+
+.Handle_Normal_Keys
 	moveq	#0,d0
 	move.b	Key(pc),d0
 	jmp	$1400+$3430.w
@@ -380,27 +504,52 @@ wblit5	move.w	#$400,$96(a3)
 
 
 PL0022	PL_START
-	PL_PSS	$14a4,.setkbd,2
+	PL_PSS	$14a4,.Set_Keyboard_Routine,2
 	PL_SA	$19b8,$19c8		; skip stuff in level 2 interrupt code
 	PL_R	$19ea			; end level 2 interrupt code
+
+	PL_IFC1X	TRB_UNLIMITED_ENERGY
+	PL_B	$710,$4a
+	PL_B	$73c,$4a
+	PL_W	$d7c+2,0
+	PL_ENDIF
+
+	PL_IFC1X	TRB_IN_GAME_KEYS
+	PL_PSS	$14a4,.Set_Keyboard_Routine_Trainer,2
+	PL_ENDIF
 	PL_END
 	
-.setkbd	lea	.kbdcust(pc),a0
-	move.l	a0,KbdCust-.kbdcust(a0)
+.Set_Keyboard_Routine_Trainer
+	pea	.Keyboard_Routine_Trainer(pc)
+	bra.w	Set_Keyboard_Custom_Routine
+
+
+.Keyboard_Routine_Trainer
+	move.l	a1,-(a7)
+	lea	.In_Game_Keys(pc),a0
+	bsr	Handle_Keys
+	move.l	(a7)+,a1
+	bra.w	.Handle_Normal_Keys
+
+.In_Game_Keys
+	dc.w	RAWKEY_N,.Skip_Level-.In_Game_Keys
+	dc.w	RAWKEY_E,.Refresh_Energy-.In_Game_Keys
+	dc.w	0
+	
+.Skip_Level
+	move.w	#1,$17e4+$326.w
 	rts
 
-.kbdcust
+.Refresh_Energy
+	move.w	#48,$17e4+$45ca.w
+	rts
 
-	IFD	DEBUG
-	move.b	RawKey(pc),d0
-	cmp.b	#$36,d0
-	bne.b	.noN
-	move.w	#1,$17e4+$326
-	ENDC
-
-.noN
+.Set_Keyboard_Routine
+	pea	.Handle_Normal_Keys(pc)
+	bra.w	Set_Keyboard_Custom_Routine
 
 
+.Handle_Normal_Keys
 	moveq	#0,d0
 	move.b	Key(pc),d0
 	jmp	$17e4+$19b4.w
@@ -418,24 +567,51 @@ PL0023_BLIT
 	PL_END
 
 PL0023	PL_START
-	PL_PSS	$14a8,.setkbd,2
+	PL_PSS	$14a8,.Set_Keyboard_Routine,2
 	PL_SA	$19bc,$19cc		; skip stuff in level 2 interrupt code
 	PL_R	$19ee			; end level 2 interrupt code
+
+	PL_IFC1X	TRB_UNLIMITED_ENERGY
+	PL_B	$71c,$4a
+	PL_B	$748,$4a
+	PL_W	$d80+2,0
+	PL_ENDIF
+
+	PL_IFC1X	TRB_IN_GAME_KEYS
+	PL_PSS	$14a8,.Set_Keyboard_Routine_Trainer,2
+	PL_ENDIF
 	PL_END
 	
-.setkbd	lea	.kbdcust(pc),a0
-	move.l	a0,KbdCust-.kbdcust(a0)
+.Set_Keyboard_Routine_Trainer
+	pea	.Keyboard_Routine_Trainer(pc)
+	bra.w	Set_Keyboard_Custom_Routine
+
+
+.Keyboard_Routine_Trainer
+	move.l	a1,-(a7)
+	lea	.In_Game_Keys(pc),a0
+	bsr	Handle_Keys
+	move.l	(a7)+,a1
+	bra.w	.Handle_Normal_Keys
+
+.In_Game_Keys
+	dc.w	RAWKEY_N,.Skip_Level-.In_Game_Keys
+	dc.w	RAWKEY_E,.Refresh_Energy-.In_Game_Keys
+	dc.w	0
+	
+.Skip_Level
+	move.w	#1,$17e4+$332.w
 	rts
 
-.kbdcust
-	IFD	DEBUG
-	move.b	RawKey(pc),d0
-	cmp.b	#$36,d0
-	bne.b	.noN
-	move.w	#1,$17e4+$332
-.noN
-	ENDC
+.Refresh_Energy
+	move.w	#48,$17e4+$45ce.w
+	rts
 
+.Set_Keyboard_Routine
+	pea	.Handle_Normal_Keys(pc)
+	bra.w	Set_Keyboard_Custom_Routine
+
+.Handle_Normal_Keys
 	moveq	#0,d0
 	move.b	Key(pc),d0
 	jmp	$17e4+$19b8.w
@@ -455,6 +631,8 @@ LoadFile
 ; writes to memory outside the $80000 boundary when decrunching it
 ; -> we load to different destination!
 
+	cmp.w	#"19",$104.w
+	beq.b	.No_Fix_Needed
 	cmp.w	#"13",$104.w
 	beq.b	.fix
 	cmp.w	#"10",$104.w
@@ -466,6 +644,7 @@ LoadFile
 .fix	lea	$68000,a1		; fix load address!
 .no0008
 
+.No_Fix_Needed
 
 	move.l	resload(pc),a2
 	jmp	resload_LoadFile(a2)
@@ -486,6 +665,40 @@ WaitRaster
 	move.l	(a7)+,d0
 	rts
 
+
+Flush_Cache
+	move.l	resload(pc),-(a7)
+	add.l	#resload_FlushCache,(a7)
+	rts
+
+; ---------------------------------------------------------------------------
+
+Set_Keyboard_Custom_Routine
+	move.l	a0,-(a7)
+	lea	KbdCust(pc),a0
+	move.l	4(a7),(a0)
+	move.l	(a7)+,a0
+	rts
+
+; a0.l: table with keys and corresponding routines to call
+
+Handle_Keys
+	move.l	a0,a1
+	moveq	#0,d0
+	move.b	RawKey(pc),d0
+.check_all_key_entries
+	movem.w	(a0)+,d1/d2
+	cmp.w	d0,d1
+	beq.b	.key_entry_found
+	tst.w	(a0)
+	bne.b	.check_all_key_entries
+	rts	
+	
+.key_entry_found
+	lea	RawKey(pc),a0
+	sf	(a0)
+	pea	Flush_Cache(pc)
+	jmp	(a1,d2.w)
 
 ***********************************
 *** Level 2 IRQ			***
@@ -513,7 +726,6 @@ SetLev2IRQ
 	btst	#3,$d00(a1)			; KBD irq?
 	beq.b	.end
 
-
 	moveq	#0,d0
 	move.b	$c00(a1),d0
 	lea	Key(pc),a2
@@ -530,22 +742,8 @@ SetLev2IRQ
 	movem.l	(a7)+,d0-a6
 .nocustom	
 	
-
-
 	or.b	#1<<6,$e00(a1)			; set output mode
 
-
-
-	cmp.b	HEADER+ws_keydebug(pc),d0	
-	bne.b	.nodebug
-	movem.l	(a7)+,d0-d1/a0-a2
-	move.w	(a7),6(a7)			; sr
-	move.l	2(a7),(a7)			; pc
-	clr.w	4(a7)				; ext.l sr
-	bra.b	.debug
-
-
-.nodebug
 	cmp.b	HEADER+ws_keyexit(pc),d0
 	beq.b	.exit
 	
@@ -563,12 +761,10 @@ SetLev2IRQ
 	movem.l	(a7)+,d0-d1/a0-a2
 	rte
 
-.debug	pea	(TDREASON_DEBUG).w
+.exit	pea	(TDREASON_OK).w
 .quit	move.l	resload(pc),-(a7)
 	addq.l	#resload_Abort,(a7)
 	rts
-.exit	pea	(TDREASON_OK).w
-	bra.b	.quit
 
 Key	dc.b	0
 RawKey	dc.b	0
@@ -579,6 +775,8 @@ DECRUNCH_ATOM
 
 ; see comment in the "LoadFile" routine!
 	lea	$900+($340-$90),a1	; file name
+	cmp.w	#"19",$104.w
+	beq.b	.decrunch
 	cmp.w	#"13",$104.w
 	beq.b	.fix
 	cmp.w	#"10",$104.w
