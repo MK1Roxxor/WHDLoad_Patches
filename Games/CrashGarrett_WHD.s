@@ -21,6 +21,8 @@
 *** History			***
 ***********************************
 
+; 18-Nov-2023	- patch is now NTSC compatible
+
 ; 24-Feb-2013	- graphics problems fixed by calling _LVOWaitBlit after
 ;		  _LVOScrollRaster was called
 ;		- strange "wait for key" after intro disabled, why was
@@ -34,7 +36,6 @@
 	INCDIR	SOURCES:Include/
 	INCLUDE	whdload.i
 	INCLUDE	whdmacros.i
-	;INCLUDE	lvo/dos.i
 
 ; absolute skip
 PL_SA	MACRO
@@ -104,7 +105,7 @@ slv_info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"Version 1.0 (24.02.2013)",0
+		dc.b	"Version 1.1 (18.11.2023)",0
 		CNOP	0,4
 
 	IFD BOOTDOS
@@ -222,7 +223,7 @@ PT_GAME	dc.w	$3636,PLGAME-PT_GAME
 PLGAME	PL_START
 	PL_PS	$41be,.waitTOF		; fix timing in intro
 	PL_SA	$41be+6,$41c8
-	PL_PS	$44f0,FixDMAWait,4	; fix DMA wait in replayer
+	PL_PSS	$44f0,FixDMAWait,4	; fix DMA wait in replayer
 	PL_P	$e1a,.waitTOF2
 	PL_PSS	$4e8,.fixdbf,2
 	PL_PSS	$1cc8,FixDMAWait,2
@@ -271,26 +272,14 @@ PLGAME	PL_START
 
 
 .waitTOF2
-	movem.l	d0-a6,-(a7)
-
-.wait1	move.l	$dff004,d0
-	and.l	#$1ff00,d0
-	cmp.l	#303<<8,d0
-	bne.b	.wait1
-
-.wait2	move.l	$dff004,d0
-	and.l	#$1ff00,d0
-	cmp.l	#303<<8,d0
-	beq.b	.wait2
-
-	;bsr.b	.waitTOF
-
+.wait1	btst	#0,$dff004+1
+	beq.b	.wait1
+.wait2	btst	#0,$dff004+1
+	bne.b	.wait2
+	
 	tst.b	$dff002
 .wblit	btst	#6,$dff002
 	bne.b	.wblit
-
-
-	movem.l	(a7)+,d0-a6
 	rts
 
 .waitTOF
