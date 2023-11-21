@@ -13,6 +13,8 @@
 ;	       - trainer option for V2 added
 ;	       - 68000 quitkey support for V1
 ;	       - update finished for now but patch should be redone one day
+;
+; 21-Sep-2023  - another version supported (issue #4297)
 
 
 	INCDIR	SOURCES:Include/
@@ -70,7 +72,7 @@ _dir		IFD	DEBUG
 _name		dc.b	"Hammerfist",0
 _copy		dc.b	"1990 Vivid Image",0
 _info		dc.b	"installed & fixed by Bored Seal & StingRay",10
-		dc.b	"V1.2 (23-Sep-2018)",0
+		dc.b	"V1.3 (21-Nov-2023)",0
 
 		even
 
@@ -93,6 +95,8 @@ PLBOOT	PL_START
 	lea	$400.w,a1
 	bsr	LoadFile
 	cmp.w	#$6af4,d0		; BarryB
+	beq.b	.ok
+	cmp.w	#$5893,d0		; Christoph Gleisgerg
 	beq.b	.ok
 	cmp.w	#$7d18,d0		; SPS 1358
 	bne.w	Unsupported
