@@ -17,6 +17,7 @@
 ;			 when joystick control is used
 ;		11.10.18 (StingRay) DMA waits in sample and music players
 ;			 fixed
+;			 interrupts fixed
 ;			 68000 quitkey support (main game only)
 ;			 source made pc-relative and optimmised so the slave
 ;			 can be assembled with non-optimising assemblers too
@@ -28,9 +29,9 @@
 ;			 68000 quitkey support for intro (SLOG) added, patch
 ;			 base set to real address ($300.w) instead of 0 and
 ;			 patchlist adapted accordingly
-;			 a while later: high score stuff reverted back to
-;			 old version after reading Wepl's notes in the
-;			 ReadMe (lap times are saved too)
+;		21.11.23 "Super" animation wasn't displayed on some
+;			 machines (issue #6294), fixed by preserving all
+;			 registers when applying patches for file "MUSC"
 ;  :Requires.	-
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -53,6 +54,7 @@
 	ENDC
 
 FIXCOP = 0
+
 ;DEBUG
 
 ;============================================================================
@@ -64,7 +66,7 @@ _base		SLAVE_HEADER			;ws_Security + ws_ID
 		dc.l	0			;ws_ExecInstall
 		dc.w	_Start-_base		;ws_GameLoader
 		IFD	DEBUG
-		dc.w	.dir-_base		; ws_CurrentDir
+		dc.w	.dir-_base
 		ELSE
 		dc.w	0			;ws_CurrentDir
 		ENDC
@@ -95,13 +97,16 @@ _base		SLAVE_HEADER			;ws_Security + ws_ID
 		IFD	DEBUG
 		dc.b	"DEBUG!!! "
 		ENDC
-		dc.b	"version 1.6 "
+		dc.b	"version 1.7 "
 	IFD	BARFLY
 		INCBIN	"T:date"
 	ELSE
-		dc.b	"(12.10.2018)"
+		dc.b	"(21.11.2023)"
+
 	ENDC
 		dc.b	0
+
+
 	EVEN
 
 ;============================================================================
@@ -158,14 +163,18 @@ _Start	;	A0 = resident loader
 		BSR	_Load
 
 ; v1.6, stingray
+	movem.l	d0-a6,-(a7)
 	lea	PLMUSC(pc),a0
 	lea	$60000,a1
 	move.l	_resload(pc),a2
 	jsr	resload_Patch(a2)
+	movem.l	(a7)+,d0-a6
+
 
 		moveq	#100,d0
 		bsr	_waitbutton
 
+		JSR	$300.w
 
 ; load and decrunch the title screen
 		lea	$20000,a0
@@ -192,13 +201,13 @@ _Start	;	A0 = resident loader
 		bhi.b	.decrunchRLE
 
 		move.w	#150,d0
-		bsr	_waitbutton
+		bsr.w	_waitbutton
 
 		lea	_coplist(pc),a0
 		lea	$240.w,a1
 		move.l	a1,a2
 .cp		move.l	(a0)+,(a1)+
-		bpl	.cp
+		bpl.b	.cp
 		MOVE.L	a2,($DFF080)
 		BSR.W	_waitvb
 		MOVE.W	#$5200,($DFF100).L
@@ -222,9 +231,9 @@ lbC000164	MOVE.L	(A0)+,(A1)+
 lbC000165	MOVE.L	(A0)+,(A1)+
 		DBRA	D0,lbC000165
 
-		LEA	($300.w),A0
+		LEA	$300.w,A0
 		MOVE.L	#"GAME",D0
-		BSR.W	_Load
+		BSR.w	_Load
 
 		lea	_pl_game(pc),a0
 		lea	$300.w,a1
@@ -244,8 +253,37 @@ lbC000165	MOVE.L	(A0)+,(A1)+
 	 	bsr	_fixcop
 	ENDC
 
-		bsr	_LoadHighs
 		
+
+; load high scores
+	lea	HighName(pc),a0
+	move.l	_resload(pc),a2
+	jsr	resload_GetFileSize(a2)
+	tst.l	d0
+	beq.b	.nohigh
+	lea	HighName(pc),a0
+	lea	$70200,a1
+	move.l	a1,a5
+	jsr	resload_LoadFile(a2)
+
+
+	lea	$300+$6190.w,a2		; tab
+	moveq	#4-1,d2			; # of courses
+	move.b	#199,d0
+.loop	move.l	(a2)+,a1
+	move.l	12(a1),a1
+	move.w	#329-1,d7		; # of chars
+.decrypt
+	eor.b	d0,(a5)
+	move.b	(a5)+,d0
+	move.b	d0,(a1)+
+
+	dbf	d7,.decrypt
+	dbf	d2,.loop
+
+.nohigh
+
+
  		move.w	#$1480,d0
 		bsr	_waitbutton
 
@@ -257,7 +295,6 @@ _pl_slog	PL_START
 
 ; v1.6, stingray
 	PL_PS	$59e,.checkquit
-	
 		PL_END
 
 .checkquit
@@ -270,6 +307,7 @@ _pl_slog	PL_START
 	movem.l	(a7)+,d0-a6
 	tst.w	$300+$8a6.w		; original code
 	rts
+
 
 
 .bw1		bsr.b	_bw
@@ -287,7 +325,7 @@ _bw		;BLITWAIT
 
 _pl_game	PL_START
 		PL_W	$30,$180		;300 usp
-		PL_PS	$50,_SaveHighs
+	;	PL_PS	$50,_SaveHighs
 	;	PL_W	$61c,$4e71		;CENTRALISE MOUSE ON PLAY AREA
 		PL_W	$b7c,$300		;180 ssp
 		PL_W	$b82,$180   		;300 usp
@@ -295,16 +333,86 @@ _pl_game	PL_START
 	;	PL_P	$1218,_bw
 		PL_R	$53be			;diskaccess
 
-
 ; v1.6, stingray
 		PL_PSS	$1a6c,FixDMAWait,2
 		PL_PSS	$1a80,FixDMAWait,2
+		PL_P	$1326,AckCOP
+		PL_P	$1276,AckVBI
+		PL_P	$1286,AckBLT
+		PL_P	$ece,AckLev2
 		PL_PS	$f8e,.checkquit
 
-		;PL_B	$e9c,$4a20	; unlimited time
 
+	;PL_B	$e9c,$4a20	; unlimited time
+
+
+; menu: save-load high scores
+	PL_R	$521a		; disable loader init/directory loading
+	PL_PS	$956,.loadhigh
+	PL_S	$956+6,$968-($956+6)
+	PL_AB	$968+1,-10	; bmi.b DiskError -> bmi.b skiphigh
+
+	PL_PS	$918,.savehigh
+	PL_S	$918+6,$93c-($918+6)
+
+
+; player reached high score in game, save
+	PL_PSS	$509e,.savehigh2,2
 
 		PL_END
+
+.savehigh2
+	movem.l	d0-a6,-(a7)
+	lea	$300+$6190.w,a2		; tab
+	move.l	$300+$61b2.w,a0		; destination
+	moveq	#4-1,d2
+	move.b	#199,d0
+.loop	move.l	(a2)+,a1
+	move.l	12(a1),a1
+	move.w	#329-1,d7
+.encrypt
+	move.b	(a1),(a0)
+	eor.b	d0,(a0)+
+	move.b	(a1)+,d0
+	dbf	d7,.encrypt
+	dbf	d2,.loop
+
+	bsr.b	.savehigh
+
+	movem.l	(a7)+,d0-a6
+		
+
+
+	lea	$300+$6c05.w,a0		; original code
+	move.l	$300+$6bd6.w,a1
+	rts
+
+
+
+.loadhigh
+	lea	HighName(pc),a0
+	move.l	_resload(pc),a2
+	jsr	resload_GetFileSize(a2)
+	tst.l	d0
+	beq.b	.nohigh
+	lea	HighName(pc),a0
+	move.l	$300+$61b2.w,a1
+	jsr	resload_LoadFile(a2)
+	moveq	#0,d0
+	rts
+
+.nohigh	moveq	#-1,d0
+	rts
+
+
+.savehigh
+	lea	HighName(pc),a0
+	move.l	$300+$61b2.w,a1
+	move.l	#329*4,d0
+	move.l	_resload(pc),a2
+	jmp	resload_SaveFile(a2)
+
+
 
 .checkquit
 	move.w	d0,-(a7)
@@ -316,7 +424,8 @@ _pl_game	PL_START
 	clr.b	$bfec01			; original code
 	rts
 
-.setcl2		bsr	_waitvb
+
+.setcl2		bsr.w	_waitvb
 		move.l	$300+$62cc.w,$300+$62d0.w
 		addq.l	#2,(a7)
 		rts
@@ -385,85 +494,6 @@ _Load		lea	$200.w,a1		;disk directory
 
 ;--------------------------------
 
-HIGHS	=	$66000
-
-_LoadHighs	lea	_highs(pc),a0
-		move.l	(_resload,pc),a4
-		jsr	(resload_GetFileSize,a4)
-		tst.l	d0
-		beq.b	.end
-		lea	_highs(pc),a0
-		lea	HIGHS,a1
-		add.l	_base+ws_ExpMem(pc),a1
-		pea	(a1)
-		jsr	(resload_LoadFileDecrunch,a4)
-		move.l	(a7),a0
-		bsr.w	_crypt
-		jsr	(resload_CRC16,a4)
-		move.w	d0,$100.w		;crc
-		move.l	(a7)+,a0
-		lea	$6490.w,a2		;course table
-		moveq	#3,d2			;4 courses
-.c2		move.l	(a2)+,a3
-		move.l	(16,a3),a1		;track times start
-		move.l	($30,a3),d1		;end of scores
-		sub.l	a1,d1			;size
-		subq.w	#1,d1
-.c1		move.b	(a0)+,(a1)+
-		dbf	d1,.c1
-		dbf	d2,.c2
-.end		rts
-
-_SaveHighs
-		bset	#1,$bfe001		;disable filter
-		
-		move.l	#$10000,d1		;original
-
-		movem.l	d0-d1/a0-a4,-(a7)
-		move.l	a7,a4
-		lea	HIGHS,a0		;original trackbuffer
-		add.l	_base+ws_ExpMem(pc),a0
-		move.l	a0,a7
-		pea	(a0)
-		clr.l	-(a7)			;size
-		lea	$6490.w,a2		;course table
-		moveq	#3,d2			;4 courses
-.c2		move.l	(a2)+,a3
-		move.l	(16,a3),a1		;track times start
-		move.l	($30,a3),d1		;end of scores
-		sub.l	a1,d1			;size
-		add.l	d1,(a7)
-		subq.w	#1,d1
-.c1		move.b	(a1)+,(a0)+
-		dbf	d1,.c1
-		dbf	d2,.c2
-		movem.l	(a7),d0/a0
-		move.l	(_resload,pc),a2
-		jsr	(resload_CRC16,a2)
-		movem.l	(a7)+,d1/a0
-		cmp.w	$100.w,d0
-		beq.b	.end
-		move.w	d0,$100.w
-		move.l	d1,d0
-		bsr.b	_crypt
-		move.l	a0,a1
-		lea	_highs(pc),a0
-		jsr	(resload_SaveFile,a2)
-.end		move.l	a4,a7
-		movem.l	(a7)+,d0-d1/a0-a4
-		rts
-
-_crypt		movem.l	d0/a0,-(a7)
-		subq.w	#1,d0
-.lp		eor.b	d0,(a0)+
-		dbf	d0,.lp
-		movem.l	(a7)+,d0/a0
-		rts
-
-_highs		dc.b	"highs",0
-
-;--------------------------------
-
 _waitbutton	move.l	(_monitor,pc),d1
 		cmp.l	#NTSC_MONITOR_ID,d1
 		beq.b	.1
@@ -473,7 +503,7 @@ _waitbutton	move.l	(_monitor,pc),d1
 		beq.b	.2
 		btst	#7,$bfe001
 		beq.b	.2
-		bsr	_waitvb
+		bsr.b	_waitvb
 		dbf	d0,.1
 .2		rts
 
@@ -505,6 +535,7 @@ PLMUSC	PL_START
 	PL_PSS	$368,FixDMAWait,2
 	PL_END
 
+
 FixDMAWait
 	movem.l	d0/d1,-(a7)
 	moveq	#4-1,d0
@@ -515,7 +546,26 @@ FixDMAWait
 	movem.l	(a7)+,d0/d1
 	rts
 
+AckLev2	move.w	#1<<3,$dff09c
+	move.w	#1<<3,$dff09c
+	rte
+
+AckCOP	move.w	#1<<4,$dff09c
+	move.w	#1<<4,$dff09c
+	rte
+
+AckBLT	move.w	#1<<6,$dff09c
+	move.w	#1<<6,$dff09c
+	rte
+
+AckVBI	move.w	#1<<5,$dff09c
+	move.w	#1<<5,$dff09c
+	rte
+
+
 QUIT	pea	(TDREASON_OK).w
 	move.l	_resload(pc),-(a7)
 	addq.l	#resload_Abort,(a7)
 	rts
+
+HighName	dc.b	"SuperHangOn.high",0
