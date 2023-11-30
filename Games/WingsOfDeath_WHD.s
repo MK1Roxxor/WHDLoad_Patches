@@ -21,6 +21,8 @@
 *** History			***
 ***********************************
 
+; 30-Nov-2023	- freeze upon quit in NTSC mode fixed (issue #6251)
+
 ; 15-Jan-2016	- keyboard routines in end and credits parts rewritten
 ;		- game crashed when end-sequence was supposed to be shown,
 ;		  caused by disk change problem, disk change slighty changed
@@ -76,7 +78,7 @@
 
 FLAGS		= WHDLF_NoError|WHDLF_EmulTrap|WHDLF_ClearMem
 QUITKEY		= $59		; F10
-DEBUG
+;DEBUG
 
 MAXWPNPOWER	= 3		; bit-number for max. weapon power option
 AUTOFIRE	= 4		; bit-number for auto fire option
@@ -135,7 +137,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 .name	dc.b	"Wings of Death",0
 .copy	dc.b	"1990 Eclipse",0
 .info	dc.b	"installed by StingRay/[S]carab^Scoopex",10
-	dc.b	"Version 1.02 (15.01.2016)",0
+	dc.b	"Version 1.03 (30.11.2023)",0
 Name	dc.b	"WoD_06",0
 	CNOP	0,2
 
@@ -181,7 +183,7 @@ Patch	lea	resload(pc),a1
 	bra.b	EXIT
 	
 
-.ok		
+.ok
 
 	move.l	SKIPINTRO(pc),d0
 	beq.b	.dointro
@@ -711,13 +713,12 @@ LoadFile
 FileAdd	dc.w	0
 
 WaitRaster
-	move.l	d0,-(a7)
-.wait	move.l	$dff004,d0
-	and.l	#$1ff00,d0
-	cmp.l	#303<<8,d0
-	bne.b	.wait
-	move.l	(a7)+,d0
+.wait	btst	#0,$dff004+1
+	beq.b	.wait
+.wait2	btst	#0,$dff004+1
+	bne.b	.wait2
 	rts
+
 
 FixDMAWait
 	movem.l	d0/d1,-(a7)
