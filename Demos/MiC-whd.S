@@ -13,6 +13,11 @@
 ;          plotter to avoid performance degradation on PiStorm
 ; - doesn't require 0.5MB exp. memory (disk fully preloaded)
 
+; StingRay
+; - line drawing fixed (illegal BLTCON1 settings)
+; - 68000 quitkey support
+; - parts can be patched separately (see PL_BOOT patch list)
+
 ; Thanks to:
 ; - Stingray for publishing his sources
 ; - Tom-cat for PiStorm testing and support
@@ -50,7 +55,19 @@
 
 ****************************************************************
 
-	INCLUDE	"WHDLoad.I"
+	INCDIR	SOURCES:INCLUDE/
+	INCLUDE	WHDLoad.i
+
+	INCLUDE	Hardware/dmabits.i
+	INCLUDE	hardware/intbits.i
+	INCLUDE	hardware/custom.i
+	IFND	_custom
+_custom	= $dff000
+	ENDC
+	INCLUDE	hardware/cia.i
+	IFND	_ciaa
+_ciaa	= $bfe001
+	ENDC
 
 TRK_SIZE	EQU	11*512
 XMEM_SIZE	EQU	40*1024			; for SMC code (sine dots)
@@ -75,6 +92,7 @@ Header	SLAVE_HEADER			; ws_Security, ws_ID
 .Name	DC.B	"Made in Croatia",0
 .Copy	DC.B	"1993 Binary (v1.1 1998)",0
 .Info	DC.B	"Patched by Amigo/Binary, v1.0 (20.8.2023)",10
+	dc.b	"Additional patches by StingRay (30.12.2023)",10
 	DC.B	"Make sure to use the AGA/020+",10
 	DC.B	"fixed version from 1998.",0
 	EVEN
@@ -144,6 +162,17 @@ Patch
 	moveq	#3+3+2+1+2-1,d0
 .PatchSample	move.w	(Proto\.Nop,pc),(a1)+	; don't need sample backup
 	dbf	d0,.PatchSample
+
+	
+	move.l	a4,a1
+	add.l	#106*TRK_SIZE,a1
+	move.w	#$4e75,$172(a1)
+	pea	PL_SINEDOTS\.Wait_Blit(pc)
+	move.w	#$4eb9,$1fc(a1)
+	move.l	(a7)+,$1fc+2(a1)
+	move.w	#$4e71,$1fc+6(a1)
+
+
 
 ; Move generated+SMC code (sliding rts) to ext. memory to prevent
 ; periodic drops to 25fps on PiStorm due to frequent cache flushing.
@@ -225,6 +254,19 @@ Patch
 	lea	(1024,a3),a0
 	move.l	a0,(a1)+
 
+	movem.l	d0-a6,-(a7)
+	lea	PL_BOOT(pc),a0
+	lea	$30000,a1
+	move.l	WhdBase(pc),a2
+	jsr	resload_Patch(a2)
+
+	; Initialise level 2 interrupt for 68000 quitkey support
+	bsr	Init_Level2_Interrupt
+	movem.l	(a7)+,d0-a6
+
+
+	
+
 ; All done, ready to roll.
 	move.l	a4,(a2)			; TrackPtr
 	st	(0).w			; init exp. memory
@@ -234,6 +276,107 @@ Patch
 	move.w	#$0010,($09c,a6)
 	move.w	#$83d0,($096,a6)
 	jmp	($00aa,a3)		; into bootblock
+
+
+;PATCH_PARTS	
+PL_BOOT	PL_START
+	PL_PS	$670,.Fix_Line_Draw
+	IFD	PATCH_PARTS
+	PL_PS	$23bc-1024,.Patch_Parts
+	ENDC
+	PL_END
+
+.Fix_Line_Draw	add.w	d3,d3
+	move.w	(a3,d3.w),d3
+	and.w	#%01011111,d0		; only keep valid BLTCON1 bits
+	rts
+
+	IFD	PATCH_PARTS
+.Patch_Parts	bsr	Loader
+
+	movem.l	d0-a6,-(a7)
+	lea	.Part_Number(pc),a0
+	move.w	(a0),d0
+	addq.w	#1*2,(a0)
+	move.w	.TAB(pc,d0.w),d0
+	jsr	.TAB(pc,d0.w)
+	movem.l	(a7)+,d0-a6
+
+	jmp	(a1)
+
+.Part_Number	dc.w	0
+
+.TAB	dc.w	Patch_Credits-.TAB
+	dc.w	Patch_Glenz-.TAB
+	dc.w	Patch_Scrollers-.TAB
+	dc.w	Patch_72_Glenz-.TAB
+	dc.w	Patch_Multi_Cube-.TAB
+	dc.w	Patch_3d_Dots-.TAB
+	dc.w	Patch_Glenz_Light-.TAB
+	dc.w	Patch_Cube_Balls-.TAB
+	dc.w	Patch_Glenz_Cubes-.TAB
+	dc.w	Patch_Sine_Dots-.TAB
+	dc.w	Patch_Rubik-.TAB
+	dc.w	Patch_96_Light-.TAB
+	dc.w	Patch_Starfield-.TAB
+	dc.w	Patch_Shade_Bobs-.TAB
+	dc.w	Patch_End_Part-.TAB
+
+Patch_Credits	rts
+
+Patch_Glenz	rts
+
+Patch_Scrollers	rts
+
+Patch_72_Glenz	rts
+
+Patch_Multi_Cube
+	rts
+
+Patch_3d_Dots	rts
+
+Patch_Glenz_Light
+	rts
+
+Patch_Cube_Balls
+	rts
+
+Patch_Glenz_Cubes
+	rts
+
+Patch_Sine_Dots	rts
+
+Patch_Rubik	rts
+
+Patch_96_Light	rts
+
+Patch_Starfield	rts
+
+Patch_Shade_Bobs
+	rts
+
+Patch_End_Part	rts
+
+	ENDC
+
+
+PL_SINEDOTS	PL_START
+	PL_R	$172			; disable write to FMODE
+	PL_PS	$1f0,.Wait_Blit
+	PL_END
+
+.Wait_Blit	;move.w	#500,(a4)
+	;clr.l	-4(a4)
+.Wait_TOF	cmp.b	#255,6(a6)
+	bne.b	.Wait_TOF
+
+Wait_Blit	tst.b	$dff002
+.blitter_is_still_busy
+	btst	#6,$dff002
+	bne.b	.blitter_is_still_busy
+	rts
+	
+
 
 ****************************************************************
 ; Error handling
@@ -309,6 +452,104 @@ LineFlush
 ;	tst.w	(Test)			; original instr.
 	tst.w	($306bc)
 	rts
+
+****************************************************************
+
+QUIT	pea	(TDREASON_OK).w
+EXIT	move.l	WhdBase(pc),-(a7)
+	addq.l	#resload_Abort,(a7)
+
+
+KillSys	move.w	#$7fff,$dff09a
+	bsr.b	WaitRaster
+	move.w	#$7ff,$dff096
+	move.w	#$7fff,$dff09c
+	rts
+
+
+WaitRaster
+.wait1	btst	#0,_custom+vposr+1
+	beq.b	.wait1
+.wait2	btst	#0,_custom+vposr+1
+	bne.b	.wait2
+	rts
+
+; d0.w: number of raster lines to wait
+Wait_Raster_Lines
+	move.w	d1,-(a7)
+.loop	move.b	_custom+vhposr,d1
+.still_in_same_raster_line
+	cmp.b	_custom+vhposr,d1
+	beq.b	.still_in_same_raster_line	
+	subq.w	#1,d0
+	bne.b	.loop
+	move.w	(a7)+,d1
+	rts
+
+; d0.b: rawkey code
+
+Check_Quit_Key	cmp.b	Header+ws_keyexit(pc),d0
+	beq.w	QUIT
+	rts	
+
+; Level 2 interrupt used to handle keyboard events.
+
+Init_Level2_Interrupt
+	pea	.int(pc)
+	move.l	(a7)+,$68.w
+
+	move.b	#1<<7|1<<3,$bfed01		; enable keyboard interrupts
+	tst.b	$bfed01				; clear all CIA A interrupts
+	and.b	#~(1<<6),$bfee01		; set input mode
+
+
+	move.w	#INTF_PORTS,_custom+intreq	; clear ports interrupt
+	move.w	#INTF_SETCLR|INTF_INTEN|INTF_PORTS,_custom+intena
+	rts
+
+.int	movem.l	d0-d1/a0-a2,-(a7)
+	lea	_custom,a0
+	lea	_ciaa,a1
+
+	btst	#INTB_PORTS,intreqr+1(a0)
+	beq.b	.end
+
+	btst	#CIAICRB_SP,ciaicr(a1)
+	beq.b	.end
+
+	lea	Key(pc),a2
+	moveq	#0,d0
+	move.b	ciasdr(a1),d0
+	move.b	d0,(a2)+
+	not.b	d0
+	ror.b	d0
+	move.b	d0,(a2)+
+	or.b	#CIACRAF_SPMODE,ciacra(a1)	; set output mode
+
+	bsr.w	Check_Quit_Key
+
+	move.l	(a2)+,d1
+	beq.b	.no_keyboard_custom_routine
+	movem.l	d0-a6,-(a7)
+	move.l	d1,a0
+	jsr	(a0)
+	movem.l	(a7)+,d0-a6
+.no_keyboard_custom_routine
+	
+	moveq	#3,d0
+	bsr	Wait_Raster_Lines
+
+	and.b	#~CIACRAF_SPMODE,ciacra(a1)	; set input mode
+.end	move.w	#INTF_PORTS,intreq(a0)
+	move.w	#INTF_PORTS,intreq(a0)		; twice to avoid a4k hw bug
+	movem.l	(a7)+,d0-d1/a0-a2
+	rte
+
+
+
+Key	dc.b	0
+RawKey	dc.b	0
+KbdCust	dc.l	0			; ptr to custom routine
 
 ****************************************************************
 
