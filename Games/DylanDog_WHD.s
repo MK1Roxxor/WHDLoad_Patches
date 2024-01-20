@@ -54,16 +54,6 @@ _custom	= $dff000
 	IFND	_ciaa
 _ciaa	= $bfe001
 	ENDC
-	INCLUDE	exec/types.i
-	INCLUDE	exec/exec_lib.i
-	INCLUDE	exec/io.i
-
-	; Trainer options
-	BITDEF	TR,UNLIMITED_LIVES,0
-	BITDEF	TR,UNLIMITED_CONTINUES,1
-	BITDEF	TR,UNLIMITED_ENERGY,2
-	BITDEF	TR,UNLIMITED_TIME,3
-	BITDEF	TR,IN_GAME_KEYS,4
 
 FLAGS		= WHDLF_NoError|WHDLF_ClearMem|WHDLF_EmulTrap
 QUITKEY		= $59		; F10
