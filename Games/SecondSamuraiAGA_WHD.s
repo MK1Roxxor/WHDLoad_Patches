@@ -21,6 +21,8 @@
 *** History			***
 ***********************************
 
+; 03-Apr-2022	- NoVBRMove quitkey support
+
 ; 01-Apr-2022	- all necessary changes done, game fully works now
 
 ; 31-Mar-2022	- a few problems corrected, intro works now
@@ -145,7 +147,7 @@ HEADER	SLAVE_HEADER			; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.2 (01.04.2022)",0
+	dc.b	"Version 1.2A (03.04.2022)",0
 
 Highscore_Name	dc.b	"SecondSamurai.high",0
 File_Name	dc.b	"SecondSamuraiX_XX",0
@@ -496,11 +498,17 @@ PL_INTRO
 	PL_ORW	$45c+2,1<<9			; set Bplcon0 color bit
 	PL_SA	$80,$86				; skip write to Beamcon0
 	PL_PSA	$38a,.Set_Disk2,$3dc
+	PL_PS	$2fde,Check_Quit_Key_Internal
 	PL_END
 
 .Set_Disk2
 	moveq	#2,d0
 	bra.w	Set_Disk_Number
+
+Check_Quit_Key_Internal
+	ror.b	d0
+	not.b	d0
+	bra.w	Check_Quit_Key
 
 ; d0.w: file number multiplied by 8
 ; a0.l: destination
@@ -526,7 +534,7 @@ PL_GAME	PL_START
 	PL_P	$1b746,Load_File_Number_Internal
 
 	PL_SA	$13de,$13e6			; skip write to Beamcon0
-	PL_PSS	$3912,.Fix_Keyboard_Delay,2
+	PL_PSS	$3912,.Fix_Keyboard_Delay_And_Check_Quit_Key,2
 
 
 	; Fix out of bounds blits
@@ -642,7 +650,7 @@ PL_GAME	PL_START
 	rts
 
 
-.Fix_Keyboard_Delay
+.Fix_Keyboard_Delay_And_Check_Quit_Key
 	movem.l	d0/d1,-(a7)
 	moveq	#3-1,d0
 .loop	move.b	$dff006,d1
@@ -650,6 +658,10 @@ PL_GAME	PL_START
 	cmp.b	$dff006,d1
 	beq.b	.same_raster_line
 	dbf	d0,.loop
+
+	move.b	$4dd2.w,d0
+	bsr	Check_Quit_Key
+	
 	movem.l	(a7)+,d0/d1
 	rts
 
@@ -962,6 +974,7 @@ PL_EXTRO
 	PL_SA	$ae,$b4				; skip write to Beamcon0
 	PL_P	$1157a,Acknowledge_Level6_Interrupt
 	PL_P	$11596,Acknowledge_Level6_Interrupt
+	PL_PS	$2b94,Check_Quit_Key_Internal
 	PL_END
 
 
