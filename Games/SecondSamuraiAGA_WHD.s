@@ -21,24 +21,6 @@
 *** History			***
 ***********************************
 
-; 10-Apr-2022	- joystick button handling change broke handling of the
-;		  "emulated" keys (wrong offsets due to copy/paste from
-;		  OCS version), thanks to Pascal Demaeseneire for bug report
-
-; 10-Apr-2022	- joystick button handling code adapted to allow easy
-;		  button remapping
-;		- CUSTOM5 tooltype added to select fire2/CD32 joypad blue
-;		  button functionality (default: jump)
-;		- invincibility trainer option improved: when entering
-;		  certain level codes, the game loads data instead of
-;		  starting a game immediately. To start a game, the
-;		  corresponding menu item has to be selected again which
-;		  turned off the invincibility (as the "Toggle_Invincibility"
-;		  was used). Invincibility is now always set (i.e. it's not
-;		  toggled anymore) to fix this problem.
-
-; 03-Apr-2022	- NoVBRMove quitkey support
-
 ; 01-Apr-2022	- all necessary changes done, game fully works now
 
 ; 31-Mar-2022	- a few problems corrected, intro works now
@@ -147,8 +129,7 @@ HEADER	SLAVE_HEADER			; ws_security + ws_ID
 	dc.b	"C1:X:Unlimited Weapons:",TRB_WEAPONS+"0",";"
 	dc.b	"C1:X:In-Game Keys (Press Help during Game):",TRB_KEYS+"0",";"
 	dc.b	"C2:B:Enable Joystick in Port 1 in Menu;"
-	dc.b	"C4:B:Enable CD32/2-Button Joystick Controls;"
-	dc.b	"C5:L:Fire 2/CD32 Blue Button:Jump,Select Weapon"
+	dc.b	"C4:B:Enable CD32 Controls;"
 	dc.b	0
 
 .dir	IFD	DEBUG
@@ -164,7 +145,7 @@ HEADER	SLAVE_HEADER			; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.3A (10.04.2022)",0
+	dc.b	"Version 1.2 (01.04.2022)",0
 
 Highscore_Name	dc.b	"SecondSamurai.high",0
 File_Name	dc.b	"SecondSamuraiX_XX",0
@@ -184,8 +165,6 @@ TRAINER_OPTIONS		dc.l	0
 CPU_FLAGS		dc.l	0
 			dc.l	WHDLTAG_CUSTOM3_GET
 NO_BLITTER_WAITS	dc.l	0
-			dc.l	WHDLTAG_CUSTOM5_GET
-FIRE2_BUTTON_FUNCTION	dc.l	0
 			dc.l	TAG_DONE
 
 resload	dc.l	0
@@ -204,7 +183,6 @@ Patch	lea	resload(pc),a1
 	; detect CD32 controller
 	bsr	_detect_controller_types
 
-	bsr	Initialise_Joystick_Buttons
 
 	moveq	#1,d0
 	bsr	Set_Disk_Number
@@ -518,17 +496,11 @@ PL_INTRO
 	PL_ORW	$45c+2,1<<9			; set Bplcon0 color bit
 	PL_SA	$80,$86				; skip write to Beamcon0
 	PL_PSA	$38a,.Set_Disk2,$3dc
-	PL_PS	$2fde,Check_Quit_Key_Internal
 	PL_END
 
 .Set_Disk2
 	moveq	#2,d0
 	bra.w	Set_Disk_Number
-
-Check_Quit_Key_Internal
-	ror.b	d0
-	not.b	d0
-	bra.w	Check_Quit_Key
 
 ; d0.w: file number multiplied by 8
 ; a0.l: destination
@@ -554,7 +526,7 @@ PL_GAME	PL_START
 	PL_P	$1b746,Load_File_Number_Internal
 
 	PL_SA	$13de,$13e6			; skip write to Beamcon0
-	PL_PSS	$3912,.Fix_Keyboard_Delay_And_Check_Quit_Key,2
+	PL_PSS	$3912,.Fix_Keyboard_Delay,2
 
 
 	; Fix out of bounds blits
@@ -670,7 +642,7 @@ PL_GAME	PL_START
 	rts
 
 
-.Fix_Keyboard_Delay_And_Check_Quit_Key
+.Fix_Keyboard_Delay
 	movem.l	d0/d1,-(a7)
 	moveq	#3-1,d0
 .loop	move.b	$dff006,d1
@@ -678,10 +650,6 @@ PL_GAME	PL_START
 	cmp.b	$dff006,d1
 	beq.b	.same_raster_line
 	dbf	d0,.loop
-
-	move.b	$4dd2.w,d0
-	bsr	Check_Quit_Key
-	
 	movem.l	(a7)+,d0/d1
 	rts
 
@@ -726,8 +694,7 @@ PL_GAME	PL_START
 
 .Set_Invincibility
 	move.l	(a7),a6
-	st	$b6(a6)
-	move.b	#$4a,$1500+$888c
+	bsr.b	.Toggle_Invincibility
 	movem.l	(a7)+,a0-a6
 	rts
 
@@ -858,24 +825,10 @@ Save_Highscores
 ; --------------------------------------------------------------------------
 ; CD32 controls
 
-Initialise_Joystick_Buttons
-	move.l	FIRE2_BUTTON_FUNCTION(pc),d0
-	beq.b	.default_settings_wanted
-
-	; fire2 = select weapon, CD32 green = jump
-	lea	Button_Jump(pc),a0
-	move.l	#JPB_BTN_GRN,(a0)
-	move.l	#JPB_BTN_BLU,Button_Weapon_Select-Button_Jump(a0)
-
-
-.default_settings_wanted
-	rts
-
-; Read jyoypad in level 3 interrupt.
+; Routine is called in level 3 interrupt.
 Read_CD32_Pad
 	bsr	_joystick
 	bsr	Handle_CD32_Buttons
-
 	movem.l	(a7)+,d0-a6
 	rte
 
@@ -883,11 +836,7 @@ Read_CD32_Pad
 Enable_Button_Jump
 	move.w	$dff00c,d0
 	move.l	joy1(pc),d3
-
-	;btst	#JPB_BTN_GRN,d3
-	move.l	Button_Jump(pc),d4
-	btst	d4,d3
-
+	btst	#JPB_BTN_GRN,d3
 	beq.b	.jump_button_not_pressed
 	move.w	#1<<8,d0
 .jump_button_not_pressed
@@ -902,29 +851,21 @@ Enable_Button_Jump
 ; P: pause
 ; Escape: return to main menu
 
-Button_Weapon_Select		dc.l	JPB_BTN_GRN
-Button_Jump			dc.l	JPB_BTN_BLU
-Button_Toggle_Pause		dc.l	JPB_BTN_PLAY
-Button_Volume_Down		dc.l	JPB_BTN_REVERSE
-Button_Volume_Up		dc.l	JPB_BTN_FORWARD
-Button_Show_Help		dc.l	JPB_BTN_YEL
-
-
 
 Button_Table_Player1
-	dc.l	Button_Weapon_Select-Button_Table_Player1,RAWKEY_LEFT_SHIFT
-	dc.l	Button_Toggle_Pause-Button_Table_Player1,RAWKEY_P|1<<RAWKEY_B_DELAY_RELEASE
-	dc.l	Button_Volume_Down-Button_Table_Player1,RAWKEY_C
-	dc.l	Button_Volume_Up-Button_Table_Player1,RAWKEY_V
-	dc.l	Button_Show_Help-Button_Table_Player1,RAWKEY_HELP
+	dc.l	JPB_BTN_BLU,RAWKEY_LEFT_SHIFT
+	dc.l	JPB_BTN_PLAY,RAWKEY_P|1<<RAWKEY_B_DELAY_RELEASE
+	dc.l	JPB_BTN_REVERSE,RAWKEY_C
+	dc.l	JPB_BTN_FORWARD,RAWKEY_V
+	dc.l	JPB_BTN_YEL,RAWKEY_HELP
 	dc.l	0
 
 Button_Table_Player2
-	dc.l	Button_Weapon_Select-Button_Table_Player2,RAWKEY_RIGHT_SHIFT
-	dc.l	Button_Toggle_Pause-Button_Table_Player2,RAWKEY_P|1<<RAWKEY_B_DELAY_RELEASE
-	dc.l	Button_Volume_Down-Button_Table_Player2,RAWKEY_C
-	dc.l	Button_Volume_Up-Button_Table_Player2,RAWKEY_V
-	dc.l	Button_Show_Help-Button_Table_Player2,RAWKEY_HELP
+	dc.l	JPB_BTN_BLU,RAWKEY_RIGHT_SHIFT
+	dc.l	JPB_BTN_PLAY,RAWKEY_P|1<<RAWKEY_B_DELAY_RELEASE
+	dc.l	JPB_BTN_REVERSE,RAWKEY_C
+	dc.l	JPB_BTN_FORWARD,RAWKEY_V
+	dc.l	JPB_BTN_YEL,RAWKEY_HELP
 	dc.l	0
 
 Handle_CD32_Buttons
@@ -957,10 +898,7 @@ Release_Delay_Flag	dc.b	0
 
 Handle_CD32_Button_Press
 	movem.l	d0-a6,-(a7)
-	move.l	a0,a6
 .loop	movem.l	(a0)+,d2/d3
-	lea	(a6,d2.l),a1
-	move.l	(a1),d2
 	btst	d2,d0
 	beq.b	.check_next_button
 
@@ -987,10 +925,7 @@ Handle_CD32_Button_Press
 
 Handle_CD32_Button_Release
 	movem.l	d0-a6,-(a7)
-	move.l	a0,a6
 .loop	movem.l	(a0)+,d2/d3
-	lea	(a6,d2.l),a1
-	move.l	(a1),d2
 	btst	d2,d0
 	bne.b	.button_is_currently_pressed
 	btst	d2,d1
@@ -1027,7 +962,6 @@ PL_EXTRO
 	PL_SA	$ae,$b4				; skip write to Beamcon0
 	PL_P	$1157a,Acknowledge_Level6_Interrupt
 	PL_P	$11596,Acknowledge_Level6_Interrupt
-	PL_PS	$2b94,Check_Quit_Key_Internal
 	PL_END
 
 
