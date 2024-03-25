@@ -21,6 +21,9 @@
 *** History			***
 ***********************************
 
+; 25-Mar-2024	- Game didn't continue after end boss was defeated, caused
+;		  by a typo in the disk change patch for disk 3 (issue #6443)
+
 ; 10-Apr-2022	- invincibility trainer option improved: when entering
 ;		  certain level codes, the game loads data instead of
 ;		  starting a game immediately. To start a game, the
@@ -218,7 +221,7 @@ HEADER	SLAVE_HEADER			; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.3 (10.04.2022)",0
+	dc.b	"Version 1.3A (25.03.2024)",0
 
 Highscore_Name	dc.b	"SecondSamurai.high",0
 File_Name	dc.b	"SecondSamuraiX_XX",0
@@ -626,7 +629,7 @@ PL_GAME	PL_START
 
 
 	PL_PS	$3f68,.Clip_Blit_A4
-	PL_PSA	$1b34a,.Set_Disk3,$1b63e
+	PL_PSA	$1b34a,.Set_Disk3,$1b36e
 
 	PL_PSS	$1ab60,Fix_DMA_Wait,2
 	PL_PSS	$1ab7a,Fix_DMA_Wait,2
