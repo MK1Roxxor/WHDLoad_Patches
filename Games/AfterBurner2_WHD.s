@@ -21,6 +21,9 @@
 *** History			***
 ***********************************
 
+; 05-Apr-2024	- patch is NTSC compatible now (issue #6420)
+;		- ws_keydebug handling removed from keyboard interrupt
+
 ; 19-Jan-2016	- game could freeze when starting the first level (crunched
 ;		  data was trashed), fixed
 ;		- invincibility trainer added
@@ -34,12 +37,16 @@
 
 	INCDIR	SOURCES:INCLUDE/
 	INCLUDE	WHDLoad.i
+	INCLUDE	hardware/custom.i
+	IFND	_custom
+_custom	= $dff000
+	ENDC
 	
 
 FLAGS		= WHDLF_NoError|WHDLF_ClearMem|WHDLF_EmulTrap
 DEBUGKEY	= $58		; F9
 QUITKEY		= $59		; F10
-DEBUG
+;DEBUG
 
 ; absolute skip
 PL_SA	MACRO
@@ -99,7 +106,7 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.4 (19.01.2016)",0
+	dc.b	"Version 1.4A (05.04.2024)",0
 	CNOP	0,2
 
 
@@ -403,18 +410,14 @@ HighscoreName
 	dc.b	"AfterBurner2.high",0
 	CNOP	0,2
 
+
 WaitRaster
-	move.l	d0,-(a7)
-.wait	move.l	$dff004,d0
-	and.l	#$1ff00,d0
-	cmp.l	#303<<8,d0
-	bne.b	.wait
-.wait2	move.l	$dff004,d0
-	and.l	#$1ff00,d0
-	cmp.l	#303<<8,d0
-	beq.b	.wait2
-	move.l	(a7)+,d0
+.wait1	btst	#0,_custom+vposr+1
+	beq.b	.wait1
+.wait2	btst	#0,_custom+vposr+1
+	bne.b	.wait2
 	rts
+
 
 ***********************************
 *** Level 2 IRQ			***
@@ -460,21 +463,8 @@ SetLev2IRQ
 .nocustom	
 	
 
-
 	or.b	#1<<6,$e00(a1)			; set output mode
 
-
-
-	cmp.b	HEADER+ws_keydebug(pc),d0	
-	bne.b	.nodebug
-	movem.l	(a7)+,d0-d1/a0-a2
-	move.w	(a7),6(a7)			; sr
-	move.l	2(a7),(a7)			; pc
-	clr.w	4(a7)				; ext.l sr
-	bra.b	.debug
-
-
-.nodebug
 	cmp.b	HEADER+ws_keyexit(pc),d0
 	beq.b	.exit
 	
@@ -492,12 +482,10 @@ SetLev2IRQ
 	movem.l	(a7)+,d0-d1/a0-a2
 	rte
 
-.debug	pea	(TDREASON_DEBUG).w
+.exit	pea	(TDREASON_OK).w
 .quit	move.l	resload(pc),-(a7)
 	addq.l	#resload_Abort,(a7)
 	rts
-.exit	pea	(TDREASON_OK).w
-	bra.b	.quit
 
 Key	dc.b	0
 RawKey	dc.b	0
