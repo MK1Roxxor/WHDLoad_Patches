@@ -21,6 +21,11 @@
 *** History			***
 ***********************************
 
+; 28-Aug-2024	- protection removal patch changed to support the original
+;		  version (supplied by Retroplay)
+;		- debug key handling removed from keyboard interrupt
+;		- unused code removed
+
 ; 14-Apr-2013	- work started, adapted from my Double Dribble patch
 
 	INCDIR	SOURCES:INCLUDE/
@@ -75,27 +80,15 @@ HEADER	SLAVE_HEADER		; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG!!! "
 	ENDC
-	dc.b	"Version 1.00 (14.04.2013)",0
+	dc.b	"Version 1.01 (28.08.2024)",0
 
 	CNOP	0,2
-
-
-TAGLIST		dc.l	WHDLTAG_ATTNFLAGS_GET
-CPUFLAGS	dc.l	0
-		dc.l	WHDLTAG_CUSTOM1_GET
-NOINTRO		dc.l	0
-		dc.l	TAG_END
-
 
 resload	dc.l	0
 
 Patch	lea	resload(pc),a1
 	move.l	a0,(a1)
 	move.l	a0,a2
-
-	lea	TAGLIST(pc),a0
-	jsr	resload_Control(a2)
-
 
 ; install keyboard irq
 	bsr	SetLev2IRQ
@@ -138,7 +131,7 @@ EXIT	move.l	resload(pc),a2
 	jmp	resload_Abort(a2)
 
 PLGAME	PL_START
-	PL_B	$16af6,$60		; disable protection check
+	PL_B	$bb90,$60		; disable protection check
 	PL_PS	$c754,.quit
 	PL_P	$adf0,.loadfile
 	
@@ -187,15 +180,6 @@ PLGAME	PL_START
 	movem.l	(a7)+,d1-a6
 	rts
 
-
-FixAudXVol
-	move.l	d0,-(a7)
-	moveq	#0,d0
-	move.b	3(a6),d0
-	move.w	d0,8(a5)
-	move.l	(a7)+,d0
-	rts
-
 FixDMAWait
 	movem.l	d0/d1,-(a7)
 	moveq	#5-1,d1	
@@ -204,15 +188,6 @@ FixDMAWait
 	beq.b	.wait
 	dbf	d1,.loop
 	movem.l	(a7)+,d0/d1
-	rts
-
-WaitRaster
-	move.l	d0,-(a7)
-.wait	move.l	$dff004,d0
-	and.l	#$1ff00,d0
-	cmp.l	#303<<8,d0
-	bne.b	.wait
-	move.l	(a7)+,d0
 	rts
 
 ***********************************
@@ -261,18 +236,6 @@ SetLev2IRQ
 
 	or.b	#1<<6,$e00(a1)			; set output mode
 
-
-
-	cmp.b	HEADER+ws_keydebug(pc),d0	
-	bne.b	.nodebug
-	movem.l	(a7)+,d0-d1/a0-a2
-	move.w	(a7),6(a7)			; sr
-	move.l	2(a7),(a7)			; pc
-	clr.w	4(a7)				; ext.l sr
-	bra.b	.debug
-
-
-.nodebug
 	cmp.b	HEADER+ws_keyexit(pc),d0
 	beq.b	.exit
 	
@@ -290,12 +253,10 @@ SetLev2IRQ
 	movem.l	(a7)+,d0-d1/a0-a2
 	rte
 
-.debug	pea	(TDREASON_DEBUG).w
+.exit	pea	(TDREASON_OK).w
 .quit	move.l	resload(pc),-(a7)
 	addq.l	#resload_Abort,(a7)
 	rts
-.exit	pea	(TDREASON_OK).w
-	bra.b	.quit
 
 
 Key	dc.b	0
