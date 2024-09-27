@@ -45,7 +45,7 @@ ws	SLAVE_HEADER			; ws_Security + ws_ID
 slv_name	DC.B	"Hammer Boy",0
 slv_copy	DC.B	"1990 Dinamic",0
 slv_info	DC.B	"installed & fixed by Bored Seal & StingRay",10
-		DC.B	"V1.2 (22-Sep-2024)",0
+		DC.B	"V1.3 (27-Sep-2024)",0
 slv_GameDir	dc.b	"data",0
 
 slv_config	dc.b	"C1:B:Unlimited Lives"
@@ -102,7 +102,18 @@ PL_GAME	PL_START
 	PL_P	$12d14,Patch_Stage2_Code
 	PL_P	$12d30,Patch_Stage3_Code
 	PL_P	$12d4c,Patch_Stage4_Code
+	PL_PS	$1248c,Check_Quit_Key
 	PL_END
+
+Check_Quit_Key
+	move.b	$bfec01,d0
+	move.b	d0,d1
+	ror.b	d1
+	not.b	d1
+	cmp.b	ws+ws_keyexit(pc),d1
+	beq.w	QUIT
+	rts
+
 
 Patch_Stage1_Code
 	lea	PL_STAGE1_CODE(pc),a0
@@ -126,6 +137,10 @@ Patch_Stage4_Code
 PL_STAGE1_CODE
 	PL_START
 	PL_PS	$14012,Fix_Timing
+	PL_PSS	$140e2,Delay_200000,4
+	PL_PSS	$14140,Delay_200000,4
+	PL_PSS	$14168,Delay_80000,4
+	PL_PSS	$14192,Delay_38000,4
 
 	PL_IFC1
 	PL_B	$1555e,$4a
@@ -136,6 +151,14 @@ PL_STAGE1_CODE
 PL_STAGE2_CODE
 	PL_START
 	PL_PS	$1401a,Fix_Timing
+	PL_PSS	$140ec,Delay_200000,4
+	PL_PSS	$14156,Delay_40000,4
+	PL_PSS	$14182,Delay_50000,4
+	PL_PSS	$141b0,Delay_40000,4
+	PL_PSS	$141dc,Delay_50000,4
+	PL_PSS	$14208,Delay_50000,4
+	PL_PSS	$1423e,Delay_170000,4
+	
 
 	PL_IFC1
 	PL_B	$1596a,$4a
@@ -146,6 +169,7 @@ PL_STAGE2_CODE
 PL_STAGE3_CODE
 	PL_START
 	PL_PS	$1405e,Fix_Timing
+	PL_PSS	$1413a,Delay_200000,4
 
 	PL_IFC1
 	PL_B	$15706,$4a
@@ -156,6 +180,7 @@ PL_STAGE3_CODE
 PL_STAGE4_CODE
 	PL_START
 	PL_PS	$14016,Fix_Timing
+	PL_PSS	$140ea,Delay_200000,4
 
 	PL_IFC1
 	PL_B	$15b22,$4a
@@ -166,6 +191,30 @@ PL_STAGE4_CODE
 Fix_Timing
 	bsr	WaitRaster
 	jmp	$290c0+$668
+
+Delay_200000
+	move.l	#200000/$34,d0
+	bra.w	Delay	
+
+Delay_40000
+	move.l	#40000/$34,d0
+	bra.w	Delay	
+
+Delay_50000
+	move.l	#50000/$34,d0
+	bra.w	Delay	
+
+Delay_170000
+	move.l	#170000/$34,d0
+	bra.w	Delay	
+
+Delay_80000
+	move.l	#80000/$34,d0
+	bra.w	Delay	
+
+Delay_38000
+	move.l	#38000/$34,d0
+	bra.w	Delay	
 
 
 ; d2.w: file number
@@ -443,9 +492,9 @@ Fix_DMA_Wait
 	moveq	#14,d0
 Delay
 	move.w	d0,-(sp)
-	move.b	($DFF006),d0
+	move.b	$DFF006,d0
 .same_raster_line
-	cmp.b	($DFF006),d0
+	cmp.b	$DFF006,d0
 	beq.b	.same_raster_line
 	move.w	(sp)+,d0
 	dbf	d0,Delay
@@ -461,14 +510,12 @@ Disk_Load
 	movem.l	(sp)+,d0-d2/a0-a2
 	rts
 
-resload
-	DC.L	0
+resload	dc.l	0
 Highscore_Name
-	DC.B	'Hammerboy.High',0,0
-	DC.B	0
-	DC.B	0
+	dc.b	"Hammerboy.High",0
 
-File_Name	dc.b	"HA",0
+File_Name
+	dc.b	"HA",0
 	CNOP	0,2
 
 
