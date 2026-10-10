@@ -21,6 +21,13 @@
 *** History			***
 ***********************************
 
+; 10-Oct-2026	- optional high frame rate support by Vesuri (CUSTOM1, off
+;		  by default): the 15 fps limit is removed, the cars and
+;		  the camera move smoothly between the game's ticks and
+;		  parts of the 3D view are drawn with the CPU where that is
+;		  faster than the blitter, it needs a 68020+ with the game
+;		  in fast memory, other machines run the original game
+
 ; 30-Apr-2022	- byte sized flag was passed as word sized flag when starting
 ;		  game, this caused the replay to work as intended
 ;		- all helper routines that are not used have been removed
@@ -67,7 +74,11 @@ PL_PSA	MACRO
 HEADER	SLAVE_HEADER			; ws_security + ws_ID
 	dc.w	17			; ws_version
 	dc.w	FLAGS			; flags
+	IFD VERIFY
+	dc.l $88000
+	ELSE
 	dc.l	$80000			; ws_BaseMemSize
+	ENDC
 	dc.l	0			; ws_ExecInstall
 	dc.w	Patch-HEADER		; ws_GameLoader
 	IFD	DEBUG
@@ -92,7 +103,7 @@ HEADER	SLAVE_HEADER			; ws_security + ws_ID
 	dc.w	.config-HEADER		; ws_config
 
 
-.config	dc.b	0
+.config	dc.b	"C1:B:High frame rate support (68020+ with Fast RAM)",0
 
 .dir	IFD	DEBUG
 	dc.b	"SOURCES:WHD_Slaves/Games/Indianapolis500",0
@@ -104,7 +115,7 @@ HEADER	SLAVE_HEADER			; ws_security + ws_ID
 	IFD	DEBUG
 	dc.b	"DEBUG (do NOT release!) "
 	ENDC
-	dc.b	"Version 3.0 (30.04.2022)",0
+	dc.b	"Version 3.1b (10.10.2026)",0
 
 	CNOP	0,4
 
@@ -180,6 +191,15 @@ PL_INTRO
 
 
 .Patch_Game
+	; Read CPU capabilities before applying optional patches. Preserve the
+	; loader registers; Control writes only our private tag values.
+	movem.l d0-a6,-(sp)
+	lea motion_game(pc),a1
+	move.l a0,(a1)
+	lea performance_tags(pc),a0
+	move.l resload(pc),a2
+	jsr resload_Control(a2)
+	movem.l (sp)+,d0-a6
 	move.l	a0,a1
 	lea	PL_GAME(pc),a0
 
@@ -196,7 +216,13 @@ PL_INTRO
 	ENDC
 	
 
+	IFD VERIFY
+	movem.l d0-a6,-(sp)
+	bsr verify_init
+	movem.l (sp)+,d0-a6
+	ENDC
 	bsr	Apply_Patches
+	bsr Apply_Enhancements
 	move.l	a1,a0
 	move.b	$a040+$b3e,d3
 	rts
@@ -212,7 +238,20 @@ PL_INTRO
 ; ---------------------------------------------------------------------------
 
 PL_GAME	PL_START
+	IFD DRIVING_TEST
+	PL_PS $140,driving_test_start
+	PL_P $2a8c0,driving_test_menu
+	PL_PS $9c32,driving_test_input
+	ENDC
 	PL_SA	$2d52a,$2d542
+
+	; Enhancements are applied separately after the base patch list.
+
+	IFD VERIFY
+	PL_PSS $7ee,verify_entry,2
+	PL_PSS $b57e,verify_frame,2
+	ENDC
+
 
 	PL_P	$2d478,.load
 	PL_P	$2d4b8,.save
@@ -416,3 +455,113 @@ Enable_Cache
 	jsr	resload_SetCPU(a2)
 	movem.l	(a7)+,d0-a6
 	rts
+
+; CUSTOM1=1 (the splash-window toggle) enables smooth motion and CPU drawing
+; on a 68020 or better when the game code runs from Fast RAM. They slow down a
+; 68000 and a 68020 without Fast RAM (measured), which keep the
+; original game. Caches stay as Enable_Cache and WHDLoad's Cache/DCache/NoCache
+; options set them. Unlisted: CUSTOM1 bit 2 selects bits 0 (motion) and 1
+; (CPU drawing) directly on any machine, for testing (4 = all off).
+Select_Performance
+ movem.l d1-d2/a0,-(sp)
+ move.l performance_options(pc),d0
+ btst #2,d0
+ bne.s .manual
+ moveq #0,d1
+ btst #0,d0
+ beq.s .automatic
+ move.l performance_attn(pc),d2
+ btst #1,d2                ; AFF_68020 is also set on the higher CPUs
+ beq.s .automatic
+ move.l motion_game(pc),d2
+ cmp.l #$200000,d2         ; Chip RAM
+ bcs.s .automatic
+ cmp.l #$c00000,d2         ; slow RAM at $c00000-$dfffff is as slow as Chip
+ bcs.s .fast
+ cmp.l #$e00000,d2
+ bcs.s .automatic
+.fast moveq #3,d1
+.automatic move.l d1,d0
+.manual and.l #3,d0
+ lea performance_effective(pc),a0
+ move.l d0,(a0)
+ movem.l (sp)+,d1-d2/a0
+ rts
+
+Apply_Enhancements
+ movem.l d0-a6,-(sp)
+ bsr Select_Performance
+ move.l motion_game(pc),a1
+ btst #0,d0
+ beq.s .spans
+ lea PL_MOTION(pc),a0
+ bsr Apply_Patches
+ IFD SOFT_TIMING
+ lea PL_SOFT_TIMING(pc),a0
+ bsr Apply_Patches
+ ENDC
+.spans btst #1,d0
+ beq.s .done
+ lea PL_SPANS(pc),a0
+ bsr Apply_Patches
+.done movem.l (sp)+,d0-a6
+ rts
+
+PL_MOTION PL_START
+	PL_PSS $152,motion_wait,2   ; whole move.w game:9832,d0 / beq.s wait
+	IFND NO_MOTION
+	PL_PS $9c06,motion_cia
+	PL_P $3af0,motion_record
+	PL_PSS $26d4c,motion_rewrite,2
+	PL_PS $270,motion_cockpit
+	ENDC
+ PL_END
+
+PL_SPANS PL_START
+	IFND NO_ASYNC_CLEAR
+	PL_PSS $c29a,clear_return,2
+	PL_P $c240,clear_planes01        ; whole move.l before the plane 0/1 fills
+	IFD VERIFY
+	PL_PS $2da,verify_clear
+	ENDC
+	PL_PS $bb8e,clear_solid_barrier
+	PL_PS $bc96,clear_texture_barrier
+	PL_PS $bde4,clear_solid_barrier
+	PL_PSS $b8ca,clear_line_barrier,2
+	PL_PSS $b574,clear_frame_barrier,2
+	ENDC
+	PL_PSS $bbb4,span_solid,2
+	PL_PSS $bcbc,span_texture,2
+	PL_PSS $be04,span_dither,2
+	PL_P $b92c,line_cpu            ; whole asl/add/move; octants branch to its start
+ PL_END
+
+performance_effective dc.l 0
+
+; Private WHDLoad capability and option tags.
+performance_tags
+	dc.l WHDLTAG_ATTNFLAGS_GET
+performance_attn dc.l 0
+	dc.l WHDLTAG_CUSTOM1_GET
+performance_options dc.l 0
+	dc.l 0
+
+	INCLUDE "Indianapolis500_Motion.s"
+
+	INCLUDE "Indianapolis500_Spans.s"
+
+	IFD VERIFY
+	INCLUDE "Indianapolis500_PixelVerify.s"
+	ENDC
+
+	INCLUDE "Indianapolis500_Clear.s"
+
+	INCLUDE "Indianapolis500_Line.s"
+
+	IFD DRIVING_TEST
+	INCLUDE "Indianapolis500_DrivingTest.s"
+	ENDC
+
+	IFD SOFT_TIMING
+	INCLUDE "Indianapolis500_SoftTiming.s"
+	ENDC
